@@ -46,5 +46,23 @@ def ingest(
                    + (f" (VAD dropped {data['vad_dropped']})" if data.get('vad_dropped') else ""))
 
 
+@app.command()
+def select(
+    job_id: str = typer.Argument(..., help="Job id from `ingest`"),
+    max_clips: int = typer.Option(6, "--max-clips", "-n", help="Max clips to select"),
+    force: bool = typer.Option(False, "--force", help="Re-select even if cached"),
+):
+    """Pick the best clip-worthy moments via Claude (subscription) → clips.json."""
+    from . import select as s
+
+    typer.echo(f"→ Selecting clips for {job_id} (via claude -p) ...")
+    path = s.select_clips(job_id, max_clips=max_clips, force=force)
+    import json
+    data = json.loads(path.read_text())
+    typer.echo(f"✓ {len(data['clips'])} clips → {path}")
+    for i, c in enumerate(data["clips"], 1):
+        typer.echo(f"  {i}. [{c['start']:.0f}-{c['end']:.0f}s] score {c['score']:.1f}  {c['title']}")
+
+
 if __name__ == "__main__":
     app()
