@@ -1,12 +1,12 @@
 ---
 gsd_state_version: '1.0'
-status: planning
+status: complete
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -16,16 +16,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Phase 1 — Pipeline Spine (ingest + transcribe)
+**Current focus:** v1.0 COMPLETE — all 4 phases built, verified live, committed.
 
 ## Current Position
 
-Phase: 1 of 4 (Pipeline Spine — Ingest + Transcribe)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-06-29 — ROADMAP.md created (4 phases, coarse), 20/20 requirements mapped
+Phase: 4 of 4 complete (milestone v1.0 delivered)
+Status: Complete — end-to-end pipeline verified on real binaries
+Last activity: 2026-06-29 — Phases 1-4 built + verified; 27 tests pass; full upload→transcribe→select→render→download flow proven live
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
+
+### How to run
+- `bash scripts/setup.sh` (one-time), then `content-machine serve` → http://127.0.0.1:8000
+- CLI: `content-machine ingest <video>` → `select <job_id>` → `render <job_id>`
+
+### Verified live
+- P1 transcription correct on known-content video + VAD on silence + caching
+- P2 `claude -p` selection (subscription) returns boundary-snapped clips + caching
+- P3 3 aspect ratios + visible captions + thumbnails
+- P4 web upload→progress→review→reframe→download
 
 ## Performance Metrics
 
