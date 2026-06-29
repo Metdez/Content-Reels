@@ -36,28 +36,29 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 
 - **Driver:** The author already uses Claude via the Claude Code subscription for knowledge work and internal tools; wants the same "my subscription does the work locally" model applied to LinkedIn content production.
 - **Clip-selection engine:** Claude is invoked locally/headless (Claude Code CLI or Agent SDK) rather than via a paid API key — this is the "like I'm doing now" requirement.
-- **Stated repos to leverage:**
-  - `github.com/ggml-org/whisper.cpp` — local speech-to-text. Strong fit for transcription (confirmed-by-reputation; verify build/bindings).
-  - `github.com/browser-use/video-use` — purpose UNVERIFIED. Suspected to be video understanding for AI agents, not a clip editor. **Verify first.**
-  - `github.com/heygen-com/hyperframes` — purpose UNVERIFIED. Suspected frame/render library, not a clip editor. **Verify first.**
-- **Likely real editing tool:** ffmpeg almost certainly does the actual cutting, cropping, aspect-ratio reframing, and caption burn-in. Whether video-use/hyperframes add value on top is the open question.
+- **Repo verdicts (verified in research 2026-06-29):**
+  - `github.com/ggml-org/whisper.cpp` — ✅ FITS. Local STT, Metal-accelerated on Apple Silicon, word-level timestamps via CLI. **Keep.**
+  - `github.com/browser-use/video-use` — ⚠️ It IS a real transcript-driven AI video editor, but transcribes via ElevenLabs cloud (breaks local-first) and outputs one montage file. **Dropped as a dependency; its transcript→edit pattern is a reference only.**
+  - `github.com/heygen-com/hyperframes` — HTML/CSS→MP4 motion-graphics renderer (animated transparent overlays). **Kept for v1 to render animated captions**, composited over ffmpeg-cut clips. Not a clip cutter.
+- **Editing engine:** ffmpeg does the cutting, cropping, aspect-ratio reframing, and clip assembly; whisper.cpp timestamps drive caption timing; hyperframes renders the animated caption overlay.
 - **Typical input:** medium-to-long single-speaker or interview video; output is several 15–90s clips.
 
 ## Constraints
 
 - **Tech / local-first**: Everything runs on the author's Mac (darwin) — no source video leaves the machine. — Privacy + cost control + "runs locally" is the whole point.
-- **Tech / clip-selection**: Clip selection must run through the Claude Code subscription (headless), not a metered API key. — Avoid per-token cost; matches author's existing workflow.
-- **Dependencies (stated)**: User has asked to use all three named repos (whisper.cpp, video-use, hyperframes). — Stated requirement. **Held pending research verification** — if video-use/hyperframes cannot do clip editing, this constraint will be renegotiated with the user before the roadmap is locked.
+- **Tech / clip-selection**: Clip selection runs through the Claude Code subscription headless (`claude -p`), NOT an API key. — Author's explicit choice. **Accepted risk:** headless calls draw from the same 5-hour/weekly subscription limits (the separate credit pool was paused June 2026) and the Consumer Terms restrict scripted access; mitigated by caching selection per transcript hash. No API-key fallback in v1 by decision.
+- **Dependencies (final)**: whisper.cpp (transcription) + ffmpeg (cut/crop/assemble) + hyperframes (animated captions). video-use dropped as a dependency (pattern reference only). — Resolved after research verification.
 - **Platform**: macOS, local toolchain (ffmpeg, Node/Python as needed). — Author's environment.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Clip-selection brain = Claude Code locally (headless), not API key | Reuse existing subscription, no per-token cost, runs locally | — Pending |
-| Outputs = 9:16 + 1:1 + 16:9, all with burned-in captions | Cover LinkedIn mobile/feed/desktop; captions drive silent-autoplay watch time | — Pending |
+| Clip-selection brain = `claude -p` subscription headless, no API-key path | Author's choice; reuse subscription | ⚠️ Accepted risk — shared subscription limits + ToS on scripted access; mitigated by caching per transcript hash |
+| Outputs = 9:16 + 1:1 + 16:9, all with captions | Cover LinkedIn mobile/feed/desktop; captions drive silent-autoplay watch time | — Pending |
 | v1 surface = minimal localhost UI (upload → review → download) | Smallest path to something usable; storage built in | — Pending |
-| Use whisper.cpp + video-use + hyperframes | User requirement | ⚠️ Revisit — two of three repos unverified for the editing role |
+| Engine = whisper.cpp + ffmpeg + hyperframes (captions); video-use dropped to reference | Verified in research: ffmpeg is the real cutter; video-use breaks local-first; hyperframes fits animated captions | ✓ Resolved |
+| v1 reframe = center crop + manual x-offset; segment-level captions; snap cuts to sentence boundaries | Research: speaker-tracking needs CV (defer); word-level karaoke needs forced alignment (defer) | — Pending |
 | Local-first, no cloud, no LinkedIn auto-post in v1 | Privacy, cost, and scope control | — Pending |
 
 ## Evolution
