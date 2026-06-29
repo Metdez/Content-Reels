@@ -166,6 +166,25 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
             "title": clip.get("title", ""), "score": clip.get("score")}
 
 
+def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
+                 caption_mode: str = "overlay") -> dict:
+    """Re-render a single clip (e.g. after a crop-offset tweak from the UI)."""
+    job = job_id_or_job if isinstance(job_id_or_job, Job) else Job.load(job_id_or_job)
+    clips = json.loads(job.clips_json_path.read_text()).get("clips", [])
+    segments = json.loads(job.transcript_path.read_text()).get("segments", [])
+    if not 1 <= idx <= len(clips):
+        raise IndexError(f"clip {idx} out of range (1..{len(clips)})")
+    result = render_clip(job, clips[idx - 1], idx, segments,
+                         config.ASPECT_RATIOS, x_offset, caption_mode)
+    # patch render.json for this clip so the library/UI reflect the re-render
+    manifest_path = job.clips_dir / "render.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"clips": []}
+    others = [c for c in manifest.get("clips", []) if c.get("index") != idx]
+    manifest["clips"] = sorted(others + [result], key=lambda c: c["index"])
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    return result
+
+
 def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
                x_offset: float = 0.0, caption_mode: str = "overlay") -> Path:
     job = job_id_or_job if isinstance(job_id_or_job, Job) else Job.load(job_id_or_job)

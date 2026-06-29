@@ -65,6 +65,17 @@ def select(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Bind host (localhost only by default)"),
+    port: int = typer.Option(8000, help="Port"),
+):
+    """Launch the localhost web UI (upload → review → download)."""
+    import uvicorn
+    typer.echo(f"→ Content Machine UI at http://{host}:{port}")
+    uvicorn.run("content_machine.app:app", host=host, port=port)
+
+
+@app.command()
 def render(
     job_id: str = typer.Argument(..., help="Job id from `ingest`"),
     x_offset: float = typer.Option(0.0, "--x-offset", help="Crop offset -1..1 for off-center speakers"),

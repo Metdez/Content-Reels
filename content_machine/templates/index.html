@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Content Machine</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#272e3a;--fg:#e6edf3;--mut:#8b949e;--accent:#3b82f6}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
+  h1{font-size:20px;margin:0} .sub{color:var(--mut);font-size:13px}
+  main{max-width:920px;margin:0 auto;padding:28px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:24px}
+  label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+  input,select{background:#0d1117;border:1px solid var(--line);color:var(--fg);
+    border-radius:8px;padding:9px 10px;font-size:14px;width:100%}
+  .row{display:flex;gap:16px;flex-wrap:wrap} .row>div{flex:1;min-width:140px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:11px 18px;
+    font-size:14px;font-weight:600;cursor:pointer;margin-top:16px}
+  button:hover{filter:brightness(1.1)}
+  table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .pill{font-size:12px;padding:2px 9px;border-radius:999px;background:#1f2937;color:var(--mut)}
+  .pill.ready{background:#0f2e1c;color:#3fb950} .empty{color:var(--mut);padding:18px 0}
+</style>
+</head>
+<body>
+<header><h1>🎬 Content Machine</h1><span class="sub">local-first LinkedIn clipper</span></header>
+<main>
+  <div class="card">
+    <form action="/upload" method="post" enctype="multipart/form-data">
+      <label>Video file</label>
+      <input type="file" name="video" accept="video/*" required>
+      <div class="row">
+        <div><label>Max clips</label><input type="number" name="max_clips" value="6" min="1" max="20"></div>
+        <div><label>Whisper model</label>
+          <select name="model"><option value="">base.en (default)</option>
+          <option value="small.en">small.en</option><option value="medium.en">medium.en</option></select></div>
+        <div><label>Captions</label>
+          <select name="captions"><option value="overlay">overlay (default)</option>
+          <option value="hyperframes">hyperframes</option><option value="none">none</option></select></div>
+        <div><label>Crop offset (−1…1)</label><input type="number" name="x_offset" value="0" step="0.1" min="-1" max="1"></div>
+      </div>
+      <button type="submit">Upload &amp; clip</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Library</h3>
+    {% if jobs %}
+    <table>
+      <thead><tr><th>Source</th><th>Status</th><th>Clips</th><th></th></tr></thead>
+      <tbody>
+      {% for j in jobs %}
+        <tr>
+          <td>{{ j.source_name or j.job_id }}</td>
+          <td><span class="pill {{ 'ready' if j.status=='ready' else '' }}">{{ j.status }}</span></td>
+          <td>{{ j.n_clips if j.n_clips is not none else '—' }}</td>
+          <td><a href="/job/{{ j.job_id }}">open →</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty">No videos yet — upload one above.</div>{% endif %}
+  </div>
+</main>
+</body>
+</html>

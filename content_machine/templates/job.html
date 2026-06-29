@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job · Content Machine</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#272e3a;--fg:#e6edf3;--mut:#8b949e;--accent:#3b82f6;--ok:#3fb950}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  header{padding:18px 28px;border-bottom:1px solid var(--line)}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  main{max-width:1080px;margin:0 auto;padding:24px}
+  .stages{display:flex;gap:10px;margin:8px 0 26px;flex-wrap:wrap}
+  .stage{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px}
+  .stage .name{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  .stage .st{font-weight:600;margin-top:3px}
+  .st.done{color:var(--ok)} .st.running{color:var(--accent)} .st.error{color:#f85149}
+  .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+  .clip{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  video{width:100%;border-radius:8px;background:#000;max-height:520px}
+  .title{font-weight:600;margin:10px 0 2px} .score{color:var(--ok);font-size:13px}
+  .why{color:var(--mut);font-size:13px;margin:6px 0}
+  .tabs{display:flex;gap:6px;margin:8px 0}
+  .tab{font-size:12px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut)}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .dl{display:flex;gap:12px;font-size:13px;margin-top:8px}
+  .reframe{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--mut)}
+  .reframe input{flex:1} button{background:var(--accent);color:#fff;border:0;border-radius:7px;
+    padding:6px 12px;font-size:13px;cursor:pointer}
+  .banner{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;color:var(--mut)}
+  .err{color:#f85149}
+</style>
+</head>
+<body>
+<header><a href="/">← Library</a> &nbsp;·&nbsp; <span id="src" class="mut"></span></header>
+<main>
+  <div class="stages" id="stages"></div>
+  <div id="status" class="banner">Starting…</div>
+  <div class="clips" id="clips"></div>
+</main>
+<script>
+const JOB = "{{ job_id }}";
+const ASPECTS = ["9:16","1:1","16:9"];
+let pollTimer = null;
+
+function stageEl(name, s){
+  return `<div class="stage"><div class="name">${name}</div>
+    <div class="st ${s.status}">${s.status}${s.error ? ' — '+s.error : ''}</div></div>`;
+}
+
+function clipEl(c){
+  const first = c.outputs["9:16"] || Object.values(c.outputs)[0] || "";
+  const tabs = ASPECTS.filter(a=>c.outputs[a]).map((a,i)=>
+    `<span class="tab ${i===0?'active':''}" data-src="${c.outputs[a]}" data-clip="${c.index}">${a}</span>`).join("");
+  const dls = ASPECTS.filter(a=>c.outputs[a]).map(a=>
+    `<a href="/download/${JOB}/${c.index}/${a}">↓ ${a}</a>`).join("");
+  return `<div class="clip" id="clip${c.index}">
+    <video src="${first}" controls preload="metadata" id="vid${c.index}"></video>
+    <div class="tabs">${tabs}</div>
+    <div class="title">${c.title||('Clip '+c.index)}</div>
+    <div class="score">${c.score!=null?('★ '+c.score):''} ${c.captions?('· '+c.captions+' captions'):''}</div>
+    <div class="why">${c.rationale||''}</div>
+    <div class="reframe">crop
+      <input type="range" min="-1" max="1" step="0.1" value="0" id="off${c.index}">
+      <button onclick="reframe(${c.index})">re-frame</button></div>
+    <div class="dl">${dls}</div>
+  </div>`;
+}
+
+async function reframe(idx){
+  const off = document.getElementById('off'+idx).value;
+  const fd = new FormData(); fd.append('x_offset', off); fd.append('captions','overlay');
+  const btn = event.target; btn.textContent='…'; btn.disabled=true;
+  const r = await fetch(`/api/job/${JOB}/clip/${idx}/reframe`, {method:'POST', body:fd});
+  if(r.ok){ const d = await r.json();
+    const active = document.querySelector(`#clip${idx} .tab.active`);
+    const a = active ? active.textContent : "9:16";
+    const v = document.getElementById('vid'+idx);
+    v.src = (d.outputs[a]||Object.values(d.outputs)[0]) + '?t=' + Date.now(); v.load();
+    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{ if(d.outputs[t.textContent]) t.dataset.src=d.outputs[t.textContent]; });
+  }
+  btn.textContent='re-frame'; btn.disabled=false;
+}
+
+document.addEventListener('click', e=>{
+  if(e.target.classList.contains('tab')){
+    const idx = e.target.dataset.clip;
+    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>t.classList.remove('active'));
+    e.target.classList.add('active');
+    const v = document.getElementById('vid'+idx); v.src = e.target.dataset.src; v.load();
+  }
+});
+
+async function poll(){
+  const r = await fetch(`/api/job/${JOB}`); if(!r.ok) return;
+  const d = await r.json();
+  document.getElementById('src').textContent = d.source_name || JOB;
+  document.getElementById('stages').innerHTML =
+    Object.entries(d.stages).map(([k,v])=>stageEl(k,v)).join("");
+  const status = document.getElementById('status');
+  if(d.error){ status.innerHTML = `<span class="err">Failed: ${d.error}</span>`; clearInterval(pollTimer); }
+  else if(d.clips.length){
+    status.style.display='none';
+    document.getElementById('clips').innerHTML = d.clips.map(clipEl).join("");
+    if(d.stages.render.status==='done') clearInterval(pollTimer);
+  } else {
+    const running = Object.entries(d.stages).find(([k,v])=>v.status==='running');
+    status.textContent = running ? `Working: ${running[0]}…` : 'Queued…';
+  }
+}
+poll(); pollTimer = setInterval(poll, 2500);
+</script>
+</body>
+</html>
