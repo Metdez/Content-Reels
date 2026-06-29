@@ -64,5 +64,23 @@ def select(
         typer.echo(f"  {i}. [{c['start']:.0f}-{c['end']:.0f}s] score {c['score']:.1f}  {c['title']}")
 
 
+@app.command()
+def render(
+    job_id: str = typer.Argument(..., help="Job id from `ingest`"),
+    x_offset: float = typer.Option(0.0, "--x-offset", help="Crop offset -1..1 for off-center speakers"),
+    captions_mode: str = typer.Option("overlay", "--captions", help="Caption renderer: overlay | hyperframes | none"),
+):
+    """Cut + reframe (9:16/1:1/16:9) + captions for each selected clip."""
+    from . import render as r
+
+    typer.echo(f"→ Rendering clips for {job_id} (captions={captions_mode}) ...")
+    path = r.render_job(job_id, x_offset=x_offset, caption_mode=captions_mode)
+    import json
+    data = json.loads(path.read_text())
+    typer.echo(f"✓ Rendered {len(data['clips'])} clips → {path.parent}")
+    for c in data["clips"]:
+        typer.echo(f"  clip{c['index']:02d}: {', '.join(c['outputs'].keys())}  ({c['captions']} captions)")
+
+
 if __name__ == "__main__":
     app()
