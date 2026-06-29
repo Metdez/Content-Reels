@@ -29,6 +29,11 @@ log = get_logger(__name__)
 OUTPUT_DIMS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
 ASPECT_SLUG = {"9:16": "9x16", "1:1": "1x1", "16:9": "16x9"}
 
+# Quiet sources (screen recordings, low mic gain) come through faithfully but
+# near-inaudible. Normalize every clip to the EBU R128 streaming target so output
+# is consistently loud. ponytail: single-pass loudnorm; two-pass if levels drift.
+AUDIO_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
 
 def probe_dims(src: Path) -> tuple[int, int]:
     out = subprocess.run(
@@ -96,7 +101,8 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
         cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]", "-map", "0:a?",
                 "-t", f"{dur:.3f}"]
 
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+    cmd += ["-af", AUDIO_FILTER,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart", str(out)]
     return cmd
@@ -107,7 +113,8 @@ def build_overlay_cmd(base: Path, overlay: Path, out: Path) -> list[str]:
     return [
         config.FFMPEG, "-y", "-i", str(base), "-i", str(overlay),
         "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto[v]",
-        "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
+        "-map", "[v]", "-map", "0:a?", "-af", AUDIO_FILTER,
+        "-c:v", "libx264", "-preset", "veryfast",
         "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac",
         "-movflags", "+faststart", str(out),
     ]
