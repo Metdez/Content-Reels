@@ -23,6 +23,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from . import config
 from .jobs import Job, compute_job_id, STAGES
 from . import transcribe, select, render
+from .logging_setup import get_logger, job_log, job_log_path, tail
+
+log = get_logger(__name__)
 
 config.DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS = config.DATA_DIR / "_uploads"
@@ -67,17 +70,34 @@ def _run_pipeline(temp_video: Path, model: str | None, max_clips: int,
                   x_offset: float, captions_mode: str) -> None:
     job = Job.for_video(temp_video)
     RUNNING[job.job_id] = {"error": None}
-    try:
-        transcribe.transcribe(temp_video, model=model)
-        select.select_clips(job, max_clips=max_clips)
-        render.render_job(job, x_offset=x_offset, caption_mode=captions_mode)
-    except Exception as e:  # surface failure on whichever stage was running
-        RUNNING[job.job_id]["error"] = str(e)
-        manifest = job.load_manifest()
-        for stage in STAGES:
-            if manifest.get("stages", {}).get(stage, {}).get("status") == "running":
-                job.update_stage(stage, "error", error=str(e))
-        traceback.print_exc()
+    with job_log(job.job_id):
+        log.info("=== pipeline start: %s (model=%s, max_clips=%d, captions=%s) ===",
+                 job.job_id, model or config.DEFAULT_MODEL, max_clips, captions_mode)
+        try:
+            import json as _json
+            transcribe.transcribe(temp_video, model=model)
+            clips_path = select.select_clips(job, max_clips=max_clips)
+            n_clips = len(_json.loads(Path(clips_path).read_text()).get("clips", []))
+            if n_clips == 0:
+                msg = ("No clip-worthy moments found. Try a longer video, lower the "
+                       "minimum clip length, or raise 'max clips'.")
+                log.warning(msg)
+                RUNNING[job.job_id]["error"] = msg
+                job.update_stage("render", "error", error=msg)
+                return
+            render.render_job(job, x_offset=x_offset, caption_mode=captions_mode)
+            log.info("=== pipeline complete: %s ===", job.job_id)
+        except Exception as e:  # surface failure on whichever stage was running
+            RUNNING[job.job_id]["error"] = str(e)
+            log.error("=== pipeline FAILED: %s ===\n%s", e, traceback.format_exc())
+            manifest = job.load_manifest()
+            marked = False
+            for stage in STAGES:
+                if manifest.get("stages", {}).get(stage, {}).get("status") == "running":
+                    job.update_stage(stage, "error", error=str(e))
+                    marked = True
+            if not marked:  # failed before any stage started running
+                job.update_stage("ingest", "error", error=str(e))
 
 
 def list_jobs() -> list[dict]:
@@ -158,8 +178,10 @@ async def upload(video: UploadFile = File(...), model: str = Form(""),
     with open(dest, "wb") as f:
         shutil.copyfileobj(video.file, f)
     job_id = compute_job_id(dest)
+    log.info("upload received: %s (%.1f MB) -> job %s", safe_name,
+             dest.stat().st_size / 1e6, job_id)
     # init manifest so polling works immediately
-    job = Job(job_id=job_id, source_name=video.filename, data_dir=config.DATA_DIR / job_id)
+    job = Job(job_id=job_id, source_name=safe_name, data_dir=config.DATA_DIR / job_id)
     job.save_manifest(job.load_manifest())
     threading.Thread(target=_run_pipeline,
                      args=(dest, model or None, max_clips, x_offset, captions),
@@ -179,6 +201,13 @@ def api_job(job_id: str):
     if not (config.DATA_DIR / job_id / "job.json").exists():
         raise HTTPException(404, "Job not found")
     return JSONResponse(_job_payload(Job.load(job_id)))
+
+
+@app.get("/api/job/{job_id}/log")
+def api_job_log(job_id: str, lines: int = 200):
+    if not (config.DATA_DIR / job_id / "job.json").exists():
+        raise HTTPException(404, "Job not found")
+    return JSONResponse({"log": tail(job_log_path(job_id), lines)})
 
 
 @app.post("/api/job/{job_id}/clip/{idx}/reframe")

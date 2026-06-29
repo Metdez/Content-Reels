@@ -30,6 +30,9 @@
     padding:6px 12px;font-size:13px;cursor:pointer}
   .banner{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;color:var(--mut)}
   .err{color:#f85149}
+  details.logs{margin:14px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  details.logs summary{cursor:pointer;padding:12px 14px;color:var(--mut);user-select:none}
+  pre#log{margin:0;padding:0 14px 14px;max-height:320px;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cdd9e5;white-space:pre-wrap}
 </style>
 </head>
 <body>
@@ -37,6 +40,10 @@
 <main>
   <div class="stages" id="stages"></div>
   <div id="status" class="banner">Starting…</div>
+  <details class="logs" open>
+    <summary>📜 Live log</summary>
+    <pre id="log">waiting for pipeline output…</pre>
+  </details>
   <div class="clips" id="clips"></div>
 </main>
 <script>
@@ -92,7 +99,20 @@ document.addEventListener('click', e=>{
   }
 });
 
+async function pollLog(){
+  try{
+    const r = await fetch(`/api/job/${JOB}/log`); if(!r.ok) return;
+    const d = await r.json();
+    if(d.log){ const el = document.getElementById('log');
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+      el.textContent = d.log;
+      if(atBottom) el.scrollTop = el.scrollHeight;
+    }
+  }catch(e){}
+}
+
 async function poll(){
+  pollLog();
   const r = await fetch(`/api/job/${JOB}`); if(!r.ok) return;
   const d = await r.json();
   document.getElementById('src').textContent = d.source_name || JOB;

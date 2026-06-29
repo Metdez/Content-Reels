@@ -68,6 +68,20 @@ data/              your videos, transcripts, clips (gitignored, local-only)
 - **Reframe** is center-crop + manual x-offset. Speaker-tracking auto-reframe and
   word-level karaoke captions are deferred (see `.planning/REQUIREMENTS.md` v2).
 
+## Logs
+
+Every run is logged to the codebase so nothing is a black box:
+
+- `logs/content_machine.log` — rotating app-wide log (all jobs, requests, errors).
+- `logs/jobs/<job_id>.log` — one file per job; the **job page shows this live** under
+  "📜 Live log" so you can watch transcribe → select → render progress and see the
+  exact error if a stage fails.
+
+```bash
+tail -f logs/content_machine.log        # follow everything
+tail -f logs/jobs/<job_id>.log          # follow one job
+```
+
 ## Tests
 
 ```bash

@@ -22,6 +22,9 @@ from pathlib import Path
 
 from . import config, captions
 from .jobs import Job
+from .logging_setup import get_logger, run, stream_run
+
+log = get_logger(__name__)
 
 OUTPUT_DIMS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
 ASPECT_SLUG = {"9:16": "9x16", "1:1": "1x1", "16:9": "16x9"}
@@ -124,6 +127,8 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
     clip_dir = job.clips_dir / f"clip{idx:02d}"
     clip_dir.mkdir(parents=True, exist_ok=True)
     events = captions.clip_caption_events(segments, clip["start"], clip["end"])
+    log.info("render clip %d (%.1f-%.1fs, %d caption events) -> %s",
+             idx, clip["start"], clip["end"], len(events), ", ".join(aspects))
 
     outputs = {}
     captions_used = caption_mode
@@ -137,14 +142,14 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                 overlay = captions.render_hyperframes_overlay(
                     events, ow, oh, clip_dir / f"hf_{ASPECT_SLUG[aspect]}")
                 base = clip_dir / f"base_{ASPECT_SLUG[aspect]}.mp4"
-                subprocess.run(build_render_cmd(src, clip["start"], clip["end"], aspect,
-                               x_offset, base, src_w, src_h, png_events=None),
-                               check=True, capture_output=True, text=True)
-                subprocess.run(build_overlay_cmd(base, overlay, out),
-                               check=True, capture_output=True, text=True)
+                run(build_render_cmd(src, clip["start"], clip["end"], aspect, x_offset,
+                    base, src_w, src_h, png_events=None), log, f"render base {aspect}")
+                run(build_overlay_cmd(base, overlay, out), log, f"composite hyperframes {aspect}")
                 outputs[aspect] = str(out)
                 continue
-            except Exception:
+            except Exception as e:
+                log.warning("hyperframes %s failed (%s) — falling back to overlay captions",
+                            aspect, str(e)[:160])
                 captions_used = "overlay"  # fall back
 
         # default: Pillow PNG overlays (or no captions)
@@ -153,14 +158,13 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
             font = captions.find_font()
             png_events = captions.render_caption_pngs(
                 events, ow, oh, clip_dir / f"pngs_{ASPECT_SLUG[aspect]}", font)
-        subprocess.run(build_render_cmd(src, clip["start"], clip["end"], aspect,
-                       x_offset, out, src_w, src_h, png_events=png_events),
-                       check=True, capture_output=True, text=True)
+        stream_run(build_render_cmd(src, clip["start"], clip["end"], aspect, x_offset,
+                   out, src_w, src_h, png_events=png_events), log,
+                   f"render clip {idx} {aspect}", cwd=str(clip_dir))
         outputs[aspect] = str(out)
 
     thumb = clip_dir / "thumb.jpg"
-    subprocess.run(build_thumbnail_cmd(src, clip["start"] + 0.5, thumb),
-                   check=True, capture_output=True, text=True)
+    run(build_thumbnail_cmd(src, clip["start"] + 0.5, thumb), log, f"thumbnail clip {idx}")
     return {"index": idx, "dir": str(clip_dir), "outputs": outputs,
             "thumb": str(thumb), "captions": captions_used,
             "title": clip.get("title", ""), "score": clip.get("score")}
@@ -196,8 +200,11 @@ def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
         raise ValueError("No clips to render — run select first.")
 
     job.update_stage("render", "running")
+    log.info("render: %d clip(s) x %d aspect(s), captions=%s",
+             len(clips), len(aspects), caption_mode)
     rendered = [render_clip(job, c, i + 1, segments, aspects, x_offset, caption_mode)
                 for i, c in enumerate(clips)]
+    log.info("render: done — %d clip(s)", len(rendered))
     manifest_path = job.clips_dir / "render.json"
     manifest_path.write_text(json.dumps({"clips": rendered}, indent=2))
     job.update_stage("render", "done", clips=len(rendered),

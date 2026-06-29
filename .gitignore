@@ -20,3 +20,8 @@ venv/
 
 # OS
 .DS_Store
+
+# Runtime logs (keep dirs, ignore contents)
+/logs/*.log
+/logs/*.log.*
+/logs/jobs/*.log

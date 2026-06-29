@@ -23,6 +23,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import config
 from .jobs import Job
+from .logging_setup import get_logger
+
+log = get_logger(__name__)
 
 MIN_CLIP_LEN = 12.0   # seconds — below this it's not a clip
 MAX_CLIP_LEN = 90.0   # LinkedIn sweet spot upper bound
@@ -113,13 +116,23 @@ def extract_json_object(text: str) -> dict:
 
 def run_claude(prompt: str, timeout: int = 180) -> dict:
     config.require_tool(config.CLAUDE, "Install Claude Code and run `claude login`.")
-    proc = subprocess.run(build_claude_cmd(), input=prompt, capture_output=True,
-                          text=True, timeout=timeout)
+    import time
+    log.info("▶ claude -p selection (%d chars of transcript) — may take 20-60s", len(prompt))
+    t = time.time()
+    try:
+        proc = subprocess.run(build_claude_cmd(), input=prompt, capture_output=True,
+                              text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        log.error("✗ claude -p timed out after %ss", timeout)
+        raise
     if proc.returncode != 0:
+        log.error("✗ claude -p failed (%s): %s", proc.returncode, (proc.stderr or "")[:500])
         raise RuntimeError(f"claude -p failed ({proc.returncode}): {proc.stderr[:500]}")
     wrapper = json.loads(proc.stdout)            # {type:result, result:"...", ...}
     if wrapper.get("is_error"):
+        log.error("✗ claude -p returned error: %s", wrapper.get("result"))
         raise RuntimeError(f"claude -p returned error: {wrapper.get('result')}")
+    log.info("✓ claude -p selection (%.1fs)", time.time() - t)
     return extract_json_object(wrapper["result"])
 
 
@@ -192,11 +205,13 @@ def select_clips(job_id_or_job, max_clips: int = DEFAULT_MAX_CLIPS,
     if job.clips_json_path.exists() and not force:
         existing = json.loads(job.clips_json_path.read_text())
         if existing.get("transcript_hash") == thash:
+            log.info("select: cache hit — reusing existing clips.json")
             job.update_stage("select", "done", cached=True)
             return job.clips_json_path
 
     job.update_stage("select", "running")
     chunks = chunk_segments(segments)
+    log.info("select: %d segments in %d chunk(s)", len(segments), len(chunks))
     all_clips: list[Clip] = []
     for idxs in chunks:
         sub = [segments[i] for i in idxs]
@@ -208,6 +223,8 @@ def select_clips(job_id_or_job, max_clips: int = DEFAULT_MAX_CLIPS,
         all_clips.extend(clips_from_indices({"clips": raw.get("clips", [])}, segments))
 
     chosen = dedup_and_filter(all_clips, max_clips)
+    log.info("select: %d candidate(s) -> %d clip(s) after dedup/filter",
+             len(all_clips), len(chosen))
     payload = {
         "transcript_hash": thash,
         "clips": [c.model_dump() for c in chosen],

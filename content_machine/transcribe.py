@@ -19,6 +19,9 @@ from pathlib import Path
 
 from . import config
 from .jobs import Job
+from .logging_setup import get_logger, run, stream_run
+
+log = get_logger(__name__)
 
 # Common whisper silence hallucinations (normalized, lowercase, no punctuation).
 HALLUCINATION_BLOCKLIST = {
@@ -45,8 +48,7 @@ def build_ffmpeg_audio_cmd(video: Path, out_wav: Path) -> list[str]:
 
 def extract_audio(video: Path, out_wav: Path) -> Path:
     config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
-    subprocess.run(build_ffmpeg_audio_cmd(video, out_wav), check=True,
-                   capture_output=True, text=True)
+    run(build_ffmpeg_audio_cmd(video, out_wav), log, "extract audio (16kHz mono)")
     return out_wav
 
 
@@ -73,13 +75,15 @@ def run_whisper(audio: Path, model: Path, out_prefix: Path,
         "Build whisper.cpp: bash scripts/setup.sh (clones + builds vendor/whisper.cpp)",
     )
     if not model.exists():
+        name = model.stem.removeprefix("ggml-")  # ggml-small.en.bin -> small.en
         raise FileNotFoundError(
             f"Whisper model missing: {model}\n"
-            f"  → bash vendor/whisper.cpp/models/download-ggml-model.sh "
-            f"{config.DEFAULT_MODEL}"
+            f"  → bash vendor/whisper.cpp/models/download-ggml-model.sh {name}"
         )
-    subprocess.run(build_whisper_cmd(audio, model, out_prefix, language),
-                   check=True, capture_output=True, text=True)
+    # stream_run tees whisper's -pp progress to the log so a long transcription
+    # shows live percentage instead of looking frozen.
+    stream_run(build_whisper_cmd(audio, model, out_prefix, language), log,
+               f"whisper transcription ({model.name})")
     return out_prefix.with_suffix(".json")
 
 
@@ -166,9 +170,12 @@ def transcribe(video_path: str | Path, model: str | None = None,
 
     job = Job.for_video(video_path)
     job.ensure_dirs()
+    log.info("transcribe: job %s from %s (%.1f MB)", job.job_id, video_path.name,
+             video_path.stat().st_size / 1e6)
 
     # cache: same content hash -> reuse transcript
     if job.transcript_path.exists() and not force:
+        log.info("transcribe: cache hit — reusing existing transcript")
         job.update_stage("transcribe", "done", cached=True)
         return job
 
@@ -191,8 +198,11 @@ def transcribe(video_path: str | Path, model: str | None = None,
         silence = detect_silence(job.audio_path)
         transcript["segments"] = vad_filter(transcript["segments"], silence)
         transcript["vad_dropped"] = before - len(transcript["segments"])
+        log.info("VAD: dropped %d silent/hallucinated segment(s)", transcript["vad_dropped"])
 
     job.transcript_path.write_text(json.dumps(transcript, indent=2))
+    log.info("transcribe: done — %d segments, %.1fs",
+             len(transcript["segments"]), transcript["duration"])
 
     manifest = job.load_manifest()
     manifest.setdefault("tools", {})["whisper_model"] = model or config.DEFAULT_MODEL
