@@ -121,7 +121,7 @@ def run_claude(prompt: str, timeout: int = 180) -> dict:
     t = time.time()
     try:
         proc = subprocess.run(build_claude_cmd(), input=prompt, capture_output=True,
-                              text=True, timeout=timeout)
+                              text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         log.error("✗ claude -p timed out after %ss", timeout)
         raise

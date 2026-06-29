@@ -34,7 +34,8 @@ def probe_dims(src: Path) -> tuple[int, int]:
     out = subprocess.run(
         [config.FFPROBE, "-v", "error", "-select_streams", "v:0",
          "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", str(src)],
-        capture_output=True, text=True, check=True).stdout.strip()
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=True).stdout.strip()
     w, h = out.split("x")[:2]
     return int(w), int(h)
 

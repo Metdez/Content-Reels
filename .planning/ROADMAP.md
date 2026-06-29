@@ -91,10 +91,60 @@ Plans:
 
 **Pitfalls to bake in**: P9 long-job UX + crash recovery (per-stage progress parsed from whisper/ffmpeg stderr; serial runner + `job.json` written after every stage; resume-from-stage; stream finished clips into the review grid as they render; idempotent renders); security (bind `127.0.0.1` only, pass ffmpeg args as an array not a shell string, validate/normalize file paths, keep all artifacts in a local non-cloud-synced dir); SQLite metadata + files-on-disk for the browsable library. Progress via polling first (lazy default), upgrade to SSE only if it feels laggy.
 
+---
+
+## Milestone v2 — Cross-Platform + Interactive Crop Preview
+
+v1.0 shipped on macOS. v2 makes the app run on **Windows** (no Homebrew/Metal — vendored static
+ffmpeg + prebuilt whisper.cpp), adds an **interactive crop-preview step before the pipeline runs**
+(upload → preview the 9:16/1:1 crop with a live slider → Run), polishes the UI, and guarantees the
+rendered clips carry **audio**. Driven by the author's switch to a Windows machine.
+
+- [ ] **Phase 5: Windows Cross-Platform Port** - App runs end-to-end on Windows: vendored ffmpeg/ffprobe + prebuilt `whisper-cli.exe` + model, OS-agnostic binary/font resolution, `setup.ps1`
+- [ ] **Phase 6: Interactive Crop Preview Before Run** - Upload no longer auto-starts; a preview page shows the source video with a draggable crop-box overlay (9:16/1:1) and a Run button that starts the pipeline with the chosen offset
+- [ ] **Phase 7: UI Polish + Live Logs** - Cleaner, more legible index + job pages; clear stage progress; readable live log panel
+- [ ] **Phase 8: Render Audio + Review Reframe** - Every rendered clip keeps its audio in all 3 ratios and after re-frame; review-time crop slider works reliably
+
+### Phase 5: Windows Cross-Platform Port
+**Goal**: The full upload→transcribe→select→render→download flow works on Windows 11 with no package manager: static ffmpeg/ffprobe and prebuilt whisper.cpp vendored under `vendor/`, `config.py` resolves `.exe` binaries + vendored paths, captions fall back to Windows fonts, and `scripts/setup.ps1` reproduces the toolchain.
+**Depends on**: v1.0 (whole pipeline)
+**Success Criteria**:
+  1. `whisper-cli.exe` + `ffmpeg.exe`/`ffprobe.exe` resolve via `config.py` on Windows (env → PATH → `vendor/bin`)
+  2. Captions render with a real font on Windows (no Mac-only font path crash)
+  3. `scripts/setup.ps1` downloads ffmpeg + whisper + model + venv idempotently
+  4. `pytest` green on Windows
+
+### Phase 6: Interactive Crop Preview Before Run
+**Goal**: After upload, the user lands on a preview page with the source video and a live crop-box overlay they can position with a slider (per the 9:16 and 1:1 crops), then clicks **Run** to start the pipeline with that offset — instead of the pipeline auto-starting with a blind numeric offset.
+**Depends on**: Phase 5
+**Success Criteria**:
+  1. Upload stores the source and shows a preview page; the pipeline does NOT auto-start
+  2. The preview shows the source video with a crop-box overlay that moves live as the slider changes, for 9:16 and 1:1
+  3. A Run button starts transcribe→select→render with the chosen x_offset; progress then displays as today
+  4. Crop math in the browser matches `render.compute_crop`
+
+### Phase 7: UI Polish + Live Logs
+**Goal**: Both pages look intentional and legible — clearer upload form, library, stage chips, and a live log panel that's easy to read while a job runs.
+**Depends on**: Phase 6
+**Success Criteria**:
+  1. Index + job pages restyled cohesively (spacing, type, states) and responsive
+  2. Stage progress is obvious at a glance (pending/running/done/error)
+  3. Live log panel is readable, auto-scrolls, and is clearly labeled
+
+### Phase 8: Render Audio + Review Reframe
+**Goal**: Guarantee audio in every rendered output (all ratios, simple + caption + re-frame paths) and make the review-time crop slider re-render reliably with a quick preview.
+**Depends on**: Phase 6, Phase 7
+**Success Criteria**:
+  1. Every rendered clip (9:16/1:1/16:9) contains an audio stream — verified with ffprobe
+  2. Re-rendered clips after a crop tweak still contain audio
+  3. The review-time crop slider re-renders the clip and reloads it with audio intact
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|

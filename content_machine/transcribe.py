@@ -138,7 +138,8 @@ def parse_silencedetect(stderr: str) -> list[tuple[float, float]]:
 def detect_silence(audio: Path, noise_db: int = -35, min_silence: float = 0.8) -> list[tuple[float, float]]:
     cmd = [config.FFMPEG, "-i", str(audio), "-af",
            f"silencedetect=noise={noise_db}dB:d={min_silence}", "-f", "null", "-"]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     return parse_silencedetect(proc.stderr)
 
 

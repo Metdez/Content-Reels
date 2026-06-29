@@ -1,12 +1,13 @@
 ---
 gsd_state_version: '1.0'
-status: complete
+status: in_progress
+milestone: v2
 progress:
-  total_phases: 4
+  total_phases: 8
   completed_phases: 4
-  total_plans: 4
+  total_plans: 8
   completed_plans: 4
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -16,15 +17,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** v1.0 COMPLETE — all 4 phases built, verified live, committed.
+**Current focus:** Milestone v2 — Cross-platform (Windows) + interactive crop preview + UI polish + guaranteed audio. v1.0 (phases 1-4) complete.
 
 ## Current Position
 
-Phase: 4 of 4 complete (milestone v1.0 delivered)
-Status: Complete — end-to-end pipeline verified on real binaries
-Last activity: 2026-06-29 — Phases 1-4 built + verified; 27 tests pass; full upload→transcribe→select→render→download flow proven live
+Milestone: v2 — Cross-Platform + Interactive Crop Preview (autonomous)
+Phase: 5 of 8 (Windows Cross-Platform Port) — in progress
+Status: v1.0 complete; v2 toolchain installed on Windows (vendored ffmpeg + whisper-cli.exe + base.en model + venv)
+Last activity: 2026-06-29 — branched feat/windows-port-crop-preview; setup.ps1 added; config.py OS-agnostic resolution
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 50% (4/8 phases)
 
 ### How to run
 - `bash scripts/setup.sh` (one-time), then `content-machine serve` → http://127.0.0.1:8000

@@ -40,9 +40,11 @@ def test_ffmpeg_audio_cmd_is_16k_mono():
 
 
 def test_whisper_cmd_requests_full_json():
-    cmd = t.build_whisper_cmd(Path("a.wav"), Path("m.bin"), Path("/out/pre"), language="en")
+    out_prefix = Path("/out/pre")
+    cmd = t.build_whisper_cmd(Path("a.wav"), Path("m.bin"), out_prefix, language="en")
     assert "--output-json-full" in cmd
-    assert "-of" in cmd and "/out/pre" in cmd
+    # compare against str(Path(...)) so the assertion is OS-agnostic (\out\pre on Windows)
+    assert "-of" in cmd and str(out_prefix) in cmd
     assert "-l" in cmd and "en" in cmd
 
 

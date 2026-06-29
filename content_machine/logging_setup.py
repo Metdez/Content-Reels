@@ -43,7 +43,7 @@ def configure_logging(level: int = logging.INFO) -> None:
         ch = logging.StreamHandler(sys.stdout)
         ch.setFormatter(fmt)
         fh = RotatingFileHandler(LOG_DIR / "content_machine.log",
-                                 maxBytes=2_000_000, backupCount=3)
+                                 maxBytes=2_000_000, backupCount=3, encoding="utf-8")
         fh.setFormatter(fmt)
         logger.addHandler(ch)
         logger.addHandler(fh)
@@ -67,7 +67,7 @@ def job_log(job_id: str):
     """Attach a per-job file handler for the duration of a pipeline run."""
     configure_logging()
     JOB_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(job_log_path(job_id))
+    fh = logging.FileHandler(job_log_path(job_id), encoding="utf-8")
     fh.setFormatter(logging.Formatter(FMT, DATEFMT))
     logger = logging.getLogger("content_machine")
     logger.addHandler(fh)
@@ -91,7 +91,8 @@ def run(cmd: list[str], log: logging.Logger, desc: str, **kw) -> subprocess.Comp
     log.debug("cmd: %s", " ".join(map(str, cmd)))
     t = time.time()
     try:
-        p = subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
+        p = subprocess.run(cmd, check=True, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", **kw)
         log.info("✓ %s (%.1fs)", desc, time.time() - t)
         return p
     except subprocess.CalledProcessError as e:
@@ -110,7 +111,7 @@ def stream_run(cmd: list[str], log: logging.Logger, desc: str, **kw) -> int:
     log.debug("cmd: %s", " ".join(map(str, cmd)))
     t = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, **kw)
+                            text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)
     last = ""
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip()

@@ -17,25 +17,35 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Vendored binaries live here on every OS (gitignored). On Windows, setup.ps1
+# drops ffmpeg/ffprobe here; on macOS setup.sh uses Homebrew + PATH instead.
+VENDOR_BIN = PROJECT_ROOT / "vendor" / "bin"
+
 # --- Local storage -----------------------------------------------------------
 DATA_DIR = Path(os.environ.get("CM_DATA_DIR", PROJECT_ROOT / "data"))
 
-# --- whisper.cpp (vendored + built by scripts/setup.sh) ----------------------
+# --- whisper.cpp (vendored + built by scripts/setup.{sh,ps1}) ----------------
 WHISPER_DIR = Path(os.environ.get("CM_WHISPER_DIR", PROJECT_ROOT / "vendor" / "whisper.cpp"))
-# whisper.cpp renamed the binary main -> whisper-cli; support both.
+# whisper.cpp renamed the binary main -> whisper-cli; support both, and the
+# Windows .exe variants from the prebuilt release zips.
 def _resolve_whisper_cli() -> Path:
     override = os.environ.get("CM_WHISPER_CLI")
     if override:
         return Path(override)
+    build_bin = WHISPER_DIR / "build" / "bin"
     for candidate in (
-        WHISPER_DIR / "build" / "bin" / "whisper-cli",
-        WHISPER_DIR / "build" / "bin" / "main",
+        build_bin / "whisper-cli.exe",
+        build_bin / "main.exe",
+        build_bin / "whisper-cli",
+        build_bin / "main",
+        WHISPER_DIR / "whisper-cli.exe",
+        WHISPER_DIR / "main.exe",
         WHISPER_DIR / "main",
     ):
         if candidate.exists():
             return candidate
     # default to the modern path even if not built yet (clear error downstream)
-    return WHISPER_DIR / "build" / "bin" / "whisper-cli"
+    return build_bin / ("whisper-cli.exe" if os.name == "nt" else "whisper-cli")
 
 WHISPER_CLI = _resolve_whisper_cli()
 DEFAULT_MODEL = os.environ.get("CM_WHISPER_MODEL", "base.en")
@@ -45,9 +55,23 @@ def model_path(model: str | None = None) -> Path:
     return WHISPER_DIR / "models" / f"ggml-{model}.bin"
 
 # --- External binaries -------------------------------------------------------
-FFMPEG = os.environ.get("CM_FFMPEG", shutil.which("ffmpeg") or "ffmpeg")
-FFPROBE = os.environ.get("CM_FFPROBE", shutil.which("ffprobe") or "ffprobe")
-CLAUDE = os.environ.get("CM_CLAUDE", shutil.which("claude") or "claude")
+def _resolve_binary(name: str, env: str) -> str:
+    """env override → PATH → vendored vendor/bin → bare name (clear error later)."""
+    override = os.environ.get(env)
+    if override:
+        return override
+    found = shutil.which(name)
+    if found:
+        return found
+    exe = name + (".exe" if os.name == "nt" else "")
+    vendored = VENDOR_BIN / exe
+    if vendored.exists():
+        return str(vendored)
+    return name
+
+FFMPEG = _resolve_binary("ffmpeg", "CM_FFMPEG")
+FFPROBE = _resolve_binary("ffprobe", "CM_FFPROBE")
+CLAUDE = _resolve_binary("claude", "CM_CLAUDE")
 
 # --- Audio / clip defaults ---------------------------------------------------
 AUDIO_SAMPLE_RATE = 16_000  # whisper.cpp requires 16kHz mono

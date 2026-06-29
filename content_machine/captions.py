@@ -22,12 +22,32 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-FONT_CANDIDATES = [
+import os
+
+# Bold, legible sans-serif candidates across OSes. Windows fonts first when on
+# Windows, then macOS, then common Linux paths — first existing wins.
+_WINDOWS_FONTS = [
+    r"C:\Windows\Fonts\arialbd.ttf",     # Arial Bold
+    r"C:\Windows\Fonts\seguisb.ttf",     # Segoe UI Semibold
+    r"C:\Windows\Fonts\segoeui.ttf",     # Segoe UI
+    r"C:\Windows\Fonts\arial.ttf",
+    r"C:\Windows\Fonts\calibrib.ttf",    # Calibri Bold
+]
+_MAC_FONTS = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/System/Library/Fonts/HelveticaNeue.ttc",
     "/Library/Fonts/Arial.ttf",
 ]
+_LINUX_FONTS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+]
+if os.name == "nt":
+    FONT_CANDIDATES = _WINDOWS_FONTS + _MAC_FONTS + _LINUX_FONTS
+else:
+    FONT_CANDIDATES = _MAC_FONTS + _LINUX_FONTS + _WINDOWS_FONTS
 
 
 def find_font() -> str | None:
