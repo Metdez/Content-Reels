@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Vendored builds (whisper.cpp is cloned + built locally by scripts/setup.sh)
+/vendor/
+
+# Local data: source videos, audio, transcripts, clips
+/data/
+
+# GSD planning scratch
+.planning/.*.log
+.planning/.*.sh
+.planning/.*.json
+.planning/.*.exit
+
+# OS
+.DS_Store
