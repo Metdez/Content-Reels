@@ -43,6 +43,19 @@ def test_media_url_is_relative_to_data_dir(monkeypatch, tmp_path):
     assert app.media_url(p) == "/media/job1/clips/clip01/9x16.mp4"
 
 
+def test_safe_upload_name_blocks_traversal_and_bad_ext(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    import importlib
+    from content_machine import app as appmod
+    importlib.reload(appmod)
+    assert appmod.safe_upload_name("talk.mp4") == "talk.mp4"
+    assert appmod.safe_upload_name("/some/dir/My Talk.MOV") == "My Talk.MOV"  # basename kept
+    assert appmod.safe_upload_name("../escape.mp4") == "escape.mp4"           # traversal neutralized
+    for bad in ["../../etc/passwd", ".hidden.mp4", "evil.sh", "no_ext", ""]:
+        with __import__("pytest").raises(ValueError):
+            appmod.safe_upload_name(bad)
+
+
 def test_job_payload_merges_clips_and_rationale(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app

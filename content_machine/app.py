@@ -27,6 +27,17 @@ from . import transcribe, select, render
 config.DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS = config.DATA_DIR / "_uploads"
 UPLOADS.mkdir(parents=True, exist_ok=True)
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"}
+
+
+def safe_upload_name(filename: str) -> str:
+    """Basename-only, dotfile-free, video-extension filename. Raises ValueError otherwise."""
+    name = Path(filename or "").name
+    if not name or name.startswith(".") or Path(name).suffix.lower() not in VIDEO_EXTS:
+        raise ValueError(f"unsafe or unsupported filename: {filename!r}")
+    if not (UPLOADS / name).resolve().is_relative_to(UPLOADS.resolve()):
+        raise ValueError("filename escapes uploads dir")
+    return name
 
 # Drive Jinja2 directly with caching disabled — Starlette's Jinja2Templates hits
 # a jinja2 LRUCache bug on Python 3.14 (unhashable dict in the cache key).
@@ -139,7 +150,11 @@ async def upload(video: UploadFile = File(...), model: str = Form(""),
                  captions: str = Form("overlay")):
     if not video.filename:
         raise HTTPException(400, "No file")
-    dest = UPLOADS / video.filename
+    try:
+        safe_name = safe_upload_name(video.filename)  # blocks path traversal
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    dest = UPLOADS / safe_name
     with open(dest, "wb") as f:
         shutil.copyfileobj(video.file, f)
     job_id = compute_job_id(dest)
