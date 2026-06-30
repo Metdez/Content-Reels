@@ -1,4 +1,16 @@
-# 🎬 Content Machine
+# 🎬 Content Machine — Windows (NVIDIA) build
+
+> **You're on the `windows-optimized` branch** — tuned for Windows 11 + an NVIDIA
+> GPU (e.g. RTX 50-series): pinned NVENC-capable ffmpeg 7.1 for GPU H.264 encoding,
+> fast CPU whisper. On a Mac? Use the [`mac-optimized`](../../tree/mac-optimized)
+> branch instead. The app auto-detects your hardware either way and falls back to
+> CPU if the GPU can't be used, so nothing breaks if you pick the "wrong" one.
+>
+> **One-time setup, then run:**
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+> .venv\Scripts\python.exe -m content_machine.cli serve   # http://127.0.0.1:8000
+> ```
 
 Local-first LinkedIn video clipper. Drop in a long video (talk, webinar, podcast) →
 it transcribes locally, Claude picks the best clip-worthy moments, and each is cut
