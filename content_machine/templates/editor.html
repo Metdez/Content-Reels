@@ -177,21 +177,45 @@ function nearestBound(t){ let best=t, bd=1e9; for(const b of BOUNDS){ const d=Ma
 /* ---- background re-render: poll status, never block the page ---- */
 let rerenderTimer=null, rerenderActive=false;
 function bust(u){ return u?(u+(u.includes('?')?'&':'?')+'t='+Date.now()):u; }
+// renderRStat updates IN PLACE — it must never rebuild a settled preview. The
+// poll runs every 600ms; rebuilding the <video> (and re-busting its URL) each
+// tick refetched the media from zero before it could buffer, so finished ratios
+// spun forever. Build the row skeleton once, patch status/labels, and create
+// each preview exactly once on the transition INTO done.
+let rAspectKey='';        // signature of the current aspect set (rebuild skeleton on change)
+let rLastStatus={};       // aspect -> last seen status, to detect done transitions
 function renderRStat(s){
   const card=document.getElementById('rendercard'); if(!card) return;
   card.style.display='block';
   const aspMap=s.aspects||{};
   let list=ASPECTS.filter(a=>a in aspMap); if(!list.length) list=Object.keys(aspMap);
+  const wrap=document.getElementById('rasps');
+  const key=list.join(',');
+  if(key!==rAspectKey){                              // aspect set changed → (re)build skeleton once
+    rAspectKey=key; rLastStatus={};
+    wrap.innerHTML=list.map(a=>`<div class="rasp" data-a="${a}">
+       <div class="lab"><span><span class="dot"></span>${a}</span><span class="st"></span></div>
+       <div class="vid"></div>
+     </div>`).join('');
+  }
   const total=list.length||1; let done=0;
-  document.getElementById('rasps').innerHTML=list.map(a=>{
+  list.forEach(a=>{
     const st=aspMap[a]; if(st==='done') done++;
-    const out=(s.outputs||{})[a];
-    const label={queued:'queued',rendering:'rendering…',done:'done ✓',error:'failed'}[st]||st||'';
-    return `<div class="rasp ${st||''}" data-a="${a}">
-       <div class="lab"><span><span class="dot"></span>${a}</span><span class="st">${label}</span></div>
-       ${out&&st==='done'?`<video src="${bust(out)}" muted playsinline preload="metadata"></video>`:''}
-     </div>`;
-  }).join('');
+    const row=wrap.querySelector(`.rasp[data-a="${a}"]`); if(!row) return;
+    row.className='rasp '+(st||'');
+    row.querySelector('.st').textContent={queued:'queued',rendering:'rendering…',done:'done ✓',error:'failed'}[st]||st||'';
+    const slot=row.querySelector('.vid'), out=(s.outputs||{})[a];
+    if(st==='done'&&out){
+      // (Re)create only on the transition into done — a fresh render of the same
+      // path. While it stays done, leave the loaded element untouched so it never
+      // re-buffers. controls = the user can actually play/inspect each ratio.
+      if(rLastStatus[a]!=='done'||!slot.firstChild)
+        slot.innerHTML=`<video src="${bust(out)}" muted playsinline controls preload="metadata"></video>`;
+    } else if(slot.firstChild){
+      slot.innerHTML='';                             // went back to rendering — drop stale preview
+    }
+    rLastStatus[a]=st;
+  });
   document.getElementById('rfill').style.width=Math.round(done/total*100)+'%';
   let sum;
   if(s.status==='error') sum='⚠ '+(s.error||'render failed');

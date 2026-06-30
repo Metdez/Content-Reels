@@ -371,6 +371,20 @@ function clipEl(c){
       <div class="dl">${dls}</div>
     </div></div>`;
 }
+/* Update the clips grid IN PLACE. The whole grid used to be rebuilt every 2.5s
+   poll, which destroyed and recreated each finished clip's <video> (perpetual
+   buffering) and reset any selected aspect tab back to 9:16. Append new cards,
+   rebuild a card only when its content actually changed, and otherwise leave the
+   loaded element — and the user's tab choice — untouched. */
+function clipSig(c){ return JSON.stringify([c.outputs,c.title,c.score,c.captions,c.rationale]); }
+function reconcileClips(clips){
+  const host=document.getElementById('clips');
+  clips.forEach(c=>{
+    const id='clip'+c.index, sig=clipSig(c); let el=document.getElementById(id);
+    if(!el){ host.insertAdjacentHTML('beforeend',clipEl(c)); el=document.getElementById(id); if(el)el.dataset.sig=sig; }
+    else if(el.dataset.sig!==sig){ el.outerHTML=clipEl(c); const f=document.getElementById(id); if(f)f.dataset.sig=sig; }
+  });
+}
 document.addEventListener('click',e=>{
   if(e.target.classList.contains('tab')){
     const idx=e.target.dataset.clip;
@@ -439,7 +453,7 @@ async function poll(){
   if(d.error){ status.className='banner err'; status.textContent='Failed: '+d.error; if(spin)spin.textContent=''; stop(); }
   else if(d.clips.length){
     status.style.display='none'; document.getElementById('clipsec').style.display='block';
-    document.getElementById('clips').innerHTML=d.clips.map(clipEl).join("");
+    reconcileClips(d.clips);
     if(d.stages.render.status==='done'){ if(spin)spin.textContent='done'; stop(); }
   } else { status.style.display='block'; status.className='banner';
     status.textContent= running?`Working: ${running[0]}…`:'Queued…'; if(spin)spin.textContent=running?running[0]+'…':''; }
