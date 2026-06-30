@@ -18,16 +18,50 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 from . import captions, config, hwaccel
-from .jobs import Job
+from .jobs import Job, atomic_write_text, read_json
 from .logging_setup import get_logger, run, stream_run
 
 log = get_logger(__name__)
 
 OUTPUT_DIMS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
 ASPECT_SLUG = {"9:16": "9x16", "1:1": "1x1", "16:9": "16x9"}
+
+# Per-job locks serialize read-modify-write of clips/render.json so concurrent
+# re-renders (two clips of one job) and the initial render_job can't clobber each
+# other's entries (v6 Phase 26 — REL-01/REL-02). The manifest is upserted by clip
+# index against the FRESH on-disk copy, never overwritten from a stale snapshot.
+_MANIFEST_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _manifest_lock(job_id: str) -> threading.Lock:
+    with _LOCKS_GUARD:
+        lock = _MANIFEST_LOCKS.get(job_id)
+        if lock is None:
+            lock = _MANIFEST_LOCKS[job_id] = threading.Lock()
+        return lock
+
+
+def _upsert_render_clips(job: Job, entries: list[dict], *, reset: bool = False) -> Path:
+    """Atomically merge `entries` (by clip `index`) into clips/render.json under the
+    job lock, re-reading the fresh on-disk manifest first so a concurrent writer's
+    entries are never lost. `reset=True` starts from an empty manifest (initial render)."""
+    manifest_path = job.clips_dir / "render.json"
+    with _manifest_lock(job.job_id):
+        if reset or not manifest_path.exists():
+            clips_by_idx: dict[int, dict] = {}
+        else:
+            cur = read_json(manifest_path, default={"clips": []})
+            clips_by_idx = {c["index"]: c for c in cur.get("clips", []) if "index" in c}
+        for e in entries:
+            clips_by_idx[e["index"]] = e
+        merged = {"clips": [clips_by_idx[i] for i in sorted(clips_by_idx)]}
+        atomic_write_text(manifest_path, json.dumps(merged, indent=2))
+    return manifest_path
 
 # Quiet sources (screen recordings, low mic gain) come through faithfully but
 # near-inaudible. Normalize every clip to the EBU R128 streaming target so output
@@ -348,7 +382,7 @@ def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
         edit_path.write_text(json.dumps(stored, indent=2))
 
     manifest_path = job.clips_dir / "render.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"clips": []}
+    manifest = read_json(manifest_path, default={"clips": []})
     existing = next((c for c in manifest.get("clips", []) if c.get("index") == idx), None)
     prev_outputs = dict(existing.get("outputs", {})) if existing else {}
 
@@ -356,10 +390,9 @@ def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
                          x_offset, caption_mode, transforms=merged_tf,
                          prev_outputs=prev_outputs, edit=stored,
                          on_aspect_done=on_aspect_done)
-    # patch render.json for this clip so the library/UI reflect the re-render
-    others = [c for c in manifest.get("clips", []) if c.get("index") != idx]
-    manifest["clips"] = sorted(others + [result], key=lambda c: c["index"])
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    # Patch render.json for this clip under the job lock, re-reading the fresh
+    # on-disk manifest so a concurrent clip's update is never clobbered (REL-02).
+    _upsert_render_clips(job, [result])
     return result
 
 
@@ -380,8 +413,11 @@ def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
                      clips_done=0, clips_total=len(clips))
     log.info("render: %d clip(s) x %d aspect(s), captions=%s",
              len(clips), len(aspects), caption_mode)
-    manifest_path = job.clips_dir / "render.json"
     rendered = []
+    # Start from a clean manifest, then upsert each clip as it finishes (atomic,
+    # under the job lock) so the UI surfaces clips incrementally without ever
+    # writing a torn file (REL-01).
+    manifest_path = _upsert_render_clips(job, [], reset=True)
 
     def make_cb(clip_no):
         def cb(aspect, path):
@@ -393,11 +429,11 @@ def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
         return cb
 
     for i, c in enumerate(clips):
-        rendered.append(render_clip(job, c, i + 1, segments, aspects, x_offset,
-                                    caption_mode, transforms=transforms,
-                                    on_aspect_done=make_cb(i + 1)))
-        # incremental manifest so the UI surfaces each clip the moment it's ready
-        manifest_path.write_text(json.dumps({"clips": rendered}, indent=2))
+        result = render_clip(job, c, i + 1, segments, aspects, x_offset,
+                             caption_mode, transforms=transforms,
+                             on_aspect_done=make_cb(i + 1))
+        rendered.append(result)
+        _upsert_render_clips(job, [result])
         job.set_progress("render", done_units[0] / total_units,
                          clips_done=len(rendered), clips_total=len(clips))
     log.info("render: done — %d clip(s)", len(rendered))

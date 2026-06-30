@@ -425,18 +425,16 @@ def test_rerender_one_out_of_range_raises(stub_encode, tmp_path):
         r.rerender_one(job, 0)
 
 
-def test_rerender_one_nonatomic_write_loses_concurrent_clip_update(stub_encode, tmp_path):
-    """QA finding (characterization, NOT a fix).
+def test_rerender_one_preserves_concurrent_clip_update(stub_encode, tmp_path):
+    """REL-02 regression (Phase 26 fix — was the lost-update characterization).
 
-    rerender_one does a read-modify-write of clips/render.json with no locking,
-    no re-read before write, and a non-atomic write_text(). Any update to a
-    *different* clip that lands after rerender_one has read the manifest but
-    before it writes is silently lost.
+    rerender_one now upserts clips/render.json by index under a per-job lock,
+    re-reading the FRESH on-disk manifest just before writing. A concurrent update
+    to a *different* clip that lands during render_clip must therefore survive.
 
-    Simulated deterministically: an on_aspect_done hook (which fires DURING
-    render_clip — after rerender_one has already read the manifest into memory)
-    rewrites clip 2 on disk. rerender_one then overwrites render.json from its
-    STALE in-memory copy, clobbering that concurrent change.
+    Simulated deterministically: an on_aspect_done hook (fires DURING render_clip,
+    after rerender_one first read the manifest) rewrites clip 2 on disk. The fixed
+    rerender_one re-reads before its merge-write, so clip 2's change is preserved.
     """
     _seed_job_inputs(tmp_path, "jobre0004", n_clips=2, with_render_json=True)
     job = _make_job(tmp_path, "jobre0004")
@@ -453,9 +451,10 @@ def test_rerender_one_nonatomic_write_loses_concurrent_clip_update(stub_encode, 
 
     after = json.loads(manifest_path.read_text())
     clip2 = next(c for c in after["clips"] if c["index"] == 2)
-    # CURRENT (buggy) behavior: the concurrent update is lost. A correct,
-    # atomic/locked implementation would instead preserve "CONCURRENTLY UPDATED".
-    assert clip2["title"] != "CONCURRENTLY UPDATED"
+    # FIXED: the concurrent update to clip 2 survives rerender_one's merge-write.
+    assert clip2["title"] == "CONCURRENTLY UPDATED"
+    # and clip 1 (the re-rendered one) is still present + updated
+    assert any(c["index"] == 1 for c in after["clips"])
 
 
 # --- command builders (not covered by test_render.py) ------------------------

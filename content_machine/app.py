@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import captions, config, render, select, transcribe
-from .jobs import STAGES, Job, compute_job_id
+from .jobs import STAGES, Job, compute_job_id, read_json
 from .logging_setup import get_logger, job_log, job_log_path, tail
 
 log = get_logger(__name__)
@@ -271,7 +271,7 @@ def _job_payload(job: Job) -> dict:
     clips = []
     render_manifest = job.clips_dir / "render.json"
     if render_manifest.exists():
-        for c in json.loads(render_manifest.read_text()).get("clips", []):
+        for c in read_json(render_manifest, default={"clips": []}).get("clips", []):
             clips.append({
                 "index": c["index"],
                 "title": c.get("title", ""),
@@ -450,7 +450,7 @@ def _clip_editor_payload(job: Job, idx: int) -> dict:
     rentry = None
     rman = job.clips_dir / "render.json"
     if rman.exists():
-        rentry = next((c for c in json.loads(rman.read_text()).get("clips", [])
+        rentry = next((c for c in read_json(rman, default={"clips": []}).get("clips", [])
                        if c.get("index") == idx), None)
     edit_path = job.clips_dir / f"clip{idx:02d}" / "edit.json"
     edit = json.loads(edit_path.read_text()) if edit_path.exists() else {}

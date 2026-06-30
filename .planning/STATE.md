@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
-  percent: 21
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
+  percent: 29
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 26 of 36 — next up (Reliability: atomic manifests + locking); Phases 23–25 complete
+Phase: 27 of 36 — next up (Non-blocking upload + state persistence + lifecycle); Phases 23–26 complete
 Plan: —
-Status: Phase 25 (HTTP API integration) shipped — tests/test_api.py +22; app.py 74.5%→85.4%, overall 92.2%; 178 tests pass; ruff clean. Next: the FIX phases (26–28) where the characterized bugs get flipped to correct. Running autonomously.
-Last activity: 2026-06-30 — Phase 25 complete (API-01…05)
+Status: Phase 26 (atomic manifests + locking) shipped — atomic_write_text + read_json (Windows replace-retry + tolerant reads) + per-job locked upsert-by-index; bug #1 (render.json non-atomic RMW) FIXED; 182 tests pass; ruff clean; coverage 91.6%. Running autonomously.
+Last activity: 2026-06-30 — Phase 26 complete (REL-01, REL-02)
 
 ### v6 progress
 
@@ -36,7 +36,7 @@ Last activity: 2026-06-30 — Phase 25 complete (API-01…05)
 
 ### Bugs found in P24 (deferred to fix phases — DO NOT lose)
 
-1. **REL (P26):** `rerender_one`/`render_job` non-atomic read-modify-write of `render.json` (`render.py:350-362, 400`) → concurrent clip update silently lost. Tests pin current (wrong) behavior — flip to correct on fix.
+1. ~~**REL (P26):** `rerender_one`/`render_job` non-atomic read-modify-write of `render.json`~~ — **FIXED in P26** (atomic_write_text + read_json + per-job locked upsert).
 2. **VAL-02 (P28):** `run_claude` leaks raw `JSONDecodeError` on chatty/non-JSON stdout (`select.py:130`).
 3. **VAL-02 (P28):** no retry — one bad/timed-out chunk aborts whole multi-chunk selection (`select.py:217`).
 4. **P28 minor:** `select.py:129` `proc.stderr[:500]` None-risk (latent).
