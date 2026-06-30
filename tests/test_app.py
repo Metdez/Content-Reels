@@ -56,6 +56,44 @@ def test_safe_upload_name_blocks_traversal_and_bad_ext(monkeypatch, tmp_path):
             appmod.safe_upload_name(bad)
 
 
+def test_parse_transforms_filters_and_defaults(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    assert app._parse_transforms("") is None
+    assert app._parse_transforms("not json") is None
+    tf = app._parse_transforms(json.dumps({
+        "9:16": {"zoom": 1.5, "x": -0.3, "y": 0.4},
+        "1:1": {"zoom": 2.0},               # partial — missing axes default
+        "bogus": {"zoom": 9},               # non-aspect dropped
+    }))
+    assert set(tf) == {"9:16", "1:1"}
+    assert tf["9:16"] == {"zoom": 1.5, "x": -0.3, "y": 0.4}
+    assert tf["1:1"] == {"zoom": 2.0, "x": 0.0, "y": 0.0}
+
+
+def test_run_job_persists_transforms_to_run_params(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    from content_machine.jobs import Job
+    # stage an awaiting-run job with a source file
+    job = Job(job_id="dddd", source_name="t.mp4", data_dir=tmp_path / "dddd")
+    job.ensure_dirs()
+    (job.data_dir / "source.mp4").write_bytes(b"x")
+    m = job.load_manifest(); m["awaiting_run"] = True; job.save_manifest(m)
+    # stub the pipeline thread so nothing actually runs (no claude/ffmpeg)
+    class _NoThread:
+        def __init__(self, *a, **k): pass
+        def start(self): pass
+    monkeypatch.setattr(app.threading, "Thread", _NoThread)
+    out = app.run_job("dddd", model="", max_clips=6, x_offset=0.0,
+                      captions="overlay",
+                      transforms=json.dumps({"9:16": {"zoom": 1.8, "x": -0.2, "y": 0.5}}))
+    assert out == {"ok": True}
+    rp = json.loads((job.data_dir / "job.json").read_text())["run_params"]
+    assert rp["transforms"]["9:16"] == {"zoom": 1.8, "x": -0.2, "y": 0.5}
+    assert rp["captions"] == "overlay"
+
+
 def test_job_payload_merges_clips_and_rationale(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app

@@ -40,9 +40,25 @@
     cursor:pointer;color:var(--mut);background:#131a26}
   .asp.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .sliderrow{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .sliderrow>span:first-child{min-width:58px;font-size:12.5px;color:var(--mut)}
   .sliderrow input[type=range]{flex:1;accent-color:var(--accent2)}
+  .sliderrow input[type=range]:disabled{opacity:.35}
   .sliderrow .val{font:12px ui-monospace,Menlo,monospace;color:var(--mut);min-width:84px;text-align:right}
   .hint{color:var(--mut);font-size:12.5px;margin-top:8px}
+
+  /* WYSIWYG preview: source (with crop box) + live output frame side by side */
+  .previewgrid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
+  @media(max-width:720px){.previewgrid{grid-template-columns:1fr}}
+  .panelcap{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 7px;display:flex;gap:8px;align-items:center}
+  .outframe{position:relative;overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);width:100%}
+  .outframe video{position:absolute;will-change:left,top,width,height}
+  .outframe .ratiotag{position:absolute;top:8px;right:8px;z-index:2;background:rgba(10,12,16,.8);color:var(--accent2);
+    font:700 11px ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
+  .reset{font-size:11.5px;font-weight:600;background:transparent;color:var(--mut);border:1px solid var(--line);
+    box-shadow:none;padding:3px 9px;border-radius:7px;margin-left:auto}
+  .reset:hover{color:var(--fg)}
+  .copyall{font-size:12px;font-weight:600;background:#1b2230;color:var(--accent2);border:1px solid var(--line);
+    box-shadow:none;padding:7px 12px;border-radius:8px;margin-top:14px}
 
   /* Stage stepper */
   .steps{display:flex;gap:10px;margin:4px 0 18px;flex-wrap:wrap}
@@ -114,43 +130,87 @@ const JOB="{{ job_id }}";
 const ASPECTS=["9:16","1:1","16:9"];
 let DATA=null, pollTimer=null, previewBuilt=false;
 
-/* ---- crop math: mirrors render.compute_crop exactly ---- */
-function computeCrop(sw,sh,aspect,xoff){
+/* ---- crop math: mirrors render.compute_crop exactly (zoom + x/y pan) ---- */
+function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
+  zoom=Math.max(1,parseFloat(zoom)||1); xoff=parseFloat(xoff)||0; yoff=parseFloat(yoff)||0;
   const [tw,th]=aspect.split(":").map(Number);
   const tar=tw/th, sar=sw/sh;
-  let cw,ch,x,y;
-  if(tar<=sar){ ch=sh; cw=Math.round(sh*tar); const slack=sw-cw;
-    xoff=Math.max(-1,Math.min(1,xoff)); x=Math.round(slack/2+xoff*slack/2); x=Math.max(0,Math.min(slack,x)); y=0; }
-  else { cw=sw; ch=Math.round(sw/tar); x=0; y=Math.max(0,Math.floor((sh-ch)/2)); }
+  let bw,bh;
+  if(tar<=sar){ bh=sh; bw=Math.round(sh*tar); }   // width-limited
+  else { bw=sw; bh=Math.round(sw/tar); }           // height-limited
+  let cw=Math.min(sw,Math.round(bw/zoom)), ch=Math.min(sh,Math.round(bh/zoom));
+  const sx=sw-cw, sy=sh-ch;
+  let x=Math.round(sx/2+Math.max(-1,Math.min(1,xoff))*sx/2);
+  let y=Math.round(sy/2+Math.max(-1,Math.min(1,yoff))*sy/2);
+  x=Math.max(0,Math.min(sx,x)); y=Math.max(0,Math.min(sy,y));
   cw-=cw%2; ch-=ch%2;
-  return {x,y,w:cw,h:ch};
+  return {x,y,w:cw,h:ch,sx,sy};
 }
-function drawBox(box,tag,sw,sh,aspect,xoff){
+function drawBox(box,tag,sw,sh,aspect,xoff,zoom,yoff){
   if(!sw||!sh){box.style.display='none';return;} box.style.display='block';
-  const c=computeCrop(sw,sh,aspect,xoff);
+  const c=computeCrop(sw,sh,aspect,xoff,zoom,yoff);
   box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
   box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%';
   if(tag) tag.textContent=aspect;
 }
+/* Live WYSIWYG: position a video inside an output-aspect frame so it shows the
+   exact cropped/zoomed/panned result. crop aspect == output aspect, so the crop
+   region fills the frame precisely. */
+function layoutOut(frame,vid,sw,sh,aspect,tf){
+  if(!sw||!sh){return;}
+  const [tw,th]=aspect.split(":").map(Number);
+  const CAP=560;                        // cap height so tall 9:16 isn't enormous
+  let fw=frame.clientWidth||0; if(!fw) return;
+  let fh=fw*th/tw;
+  if(fh>CAP){ fh=CAP; fw=Math.round(CAP*tw/th); frame.style.width=fw+'px'; }
+  else { frame.style.width=''; }
+  frame.style.height=Math.round(fh)+'px';
+  const c=computeCrop(sw,sh,aspect,tf.x,tf.zoom,tf.y);
+  const s=fw/c.w;                       // scale so crop width fills the frame
+  vid.style.width=(sw*s)+'px'; vid.style.height=(sh*s)+'px';
+  vid.style.left=(-c.x*s)+'px'; vid.style.top=(-c.y*s)+'px';
+}
 function widthLimited(sw,sh,aspect){ const [tw,th]=aspect.split(":").map(Number); return (tw/th)<=(sw/sh); }
-function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.round(-v*100)+'% left':Math.round(v*100)+'% right →'); }
+function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.round(-v*100)+'%':Math.round(v*100)+'% →'); }
+function yLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'↑ '+Math.round(-v*100)+'%':Math.round(v*100)+'% ↓'); }
+function newTF(){ return {"9:16":{zoom:1,x:0,y:0},"1:1":{zoom:1,x:0,y:0},"16:9":{zoom:1,x:0,y:0}}; }
 
 /* ---------- PRE-RUN PREVIEW ---------- */
 function buildPreview(d){
   previewBuilt=true;
   const [sw,sh]=d.source_dims||[0,0];
+  const TF=newTF();                       // per-aspect {zoom,x,y}
+  let aspect="9:16";
   const m=document.getElementById('main');
   m.innerHTML=`
    <div class="card">
-     <h2>Preview &amp; set the crop</h2>
-     <p class="lead">Position the crop window for the vertical/square ratios, choose your options, then run. Nothing is processed until you hit Run.</p>
-     <div class="cropwrap" id="pwrap"><video id="pvid" src="${d.source_url}" muted playsinline preload="metadata" controls></video>
-       <div class="cropbox" id="pbox"><span class="tag" id="ptag">9:16</span></div></div>
+     <h2>Preview &amp; frame each ratio</h2>
+     <p class="lead">Pick a ratio, then set its <b>zoom</b> and <b>position</b>. The right panel is the exact output — nothing renders until you hit Run. Each ratio keeps its own framing.</p>
      <div class="aspects" id="pasps">${ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('')}</div>
-     <div class="sliderrow"><span>Crop&nbsp;X</span>
+     <div class="previewgrid">
+       <div>
+         <p class="panelcap">Source — highlighted area is kept
+           <button class="reset" id="preset">Reset ratio</button></p>
+         <div class="cropwrap" id="pwrap"><video id="pvid" src="${d.source_url}" muted playsinline preload="metadata" controls></video>
+           <div class="cropbox" id="pbox"><span class="tag" id="ptag">9:16</span></div></div>
+       </div>
+       <div>
+         <p class="panelcap">Live output preview</p>
+         <div class="outframe" id="poutframe"><span class="ratiotag" id="pouttag">9:16</span>
+           <video id="poutvid" src="${d.source_url}?p=out" muted playsinline preload="metadata"></video></div>
+       </div>
+     </div>
+     <div class="sliderrow"><span>Zoom</span>
+       <input type="range" id="pzoom" min="1" max="3" step="0.05" value="1">
+       <span class="val" id="pzval">1.00×</span></div>
+     <div class="sliderrow"><span>Position&nbsp;X</span>
        <input type="range" id="poff" min="-1" max="1" step="0.02" value="0">
        <span class="val" id="pval">center</span></div>
-     <div class="hint" id="phint">${sw?`Source ${sw}×${sh}. The box shows what each ratio keeps.`:'Could not read video size — crop offset still applies.'}</div>
+     <div class="sliderrow"><span>Position&nbsp;Y</span>
+       <input type="range" id="poffy" min="-1" max="1" step="0.02" value="0">
+       <span class="val" id="pyval">center</span></div>
+     <div class="hint" id="phint">${sw?`Source ${sw}×${sh}.`:'Could not read video size — framing still applies.'}</div>
+     <button class="copyall" id="pcopy">⧉ Copy this framing to all ratios</button>
    </div>
    <div class="card">
      <h2>Run options</h2>
@@ -163,25 +223,41 @@ function buildPreview(d){
      </div>
      <button style="margin-top:18px;width:100%" id="runbtn">▶ Run — transcribe, pick clips &amp; render</button>
    </div>`;
-  let aspect="9:16";
   const box=document.getElementById('pbox'),tag=document.getElementById('ptag'),
-        off=document.getElementById('poff'),val=document.getElementById('pval'),hint=document.getElementById('phint');
-  const redraw=()=>{ drawBox(box,tag,sw,sh,aspect,parseFloat(off.value)); val.textContent=offLabel(off.value);
-    const wl=widthLimited(sw,sh,aspect);
-    off.disabled=!wl;
-    hint.textContent = sw ? (wl?`Source ${sw}×${sh}. Drag to reframe — keeps the highlighted area for ${aspect}.`
-                               :`${aspect} uses the full width — no horizontal crop to adjust here.`)
-                          : 'Could not read video size — crop offset still applies.'; };
+        off=document.getElementById('poff'),val=document.getElementById('pval'),
+        offy=document.getElementById('poffy'),yval=document.getElementById('pyval'),
+        zoom=document.getElementById('pzoom'),zval=document.getElementById('pzval'),
+        hint=document.getElementById('phint'),
+        outframe=document.getElementById('poutframe'),outvid=document.getElementById('poutvid'),
+        outtag=document.getElementById('pouttag');
+  function syncControls(){ const t=TF[aspect]; zoom.value=t.zoom; off.value=t.x; offy.value=t.y; }
+  function redraw(){
+    const t=TF[aspect];
+    t.zoom=parseFloat(zoom.value); t.x=parseFloat(off.value); t.y=parseFloat(offy.value);
+    const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
+    drawBox(box,tag,sw,sh,aspect,t.x,t.zoom,t.y);
+    layoutOut(outframe,outvid,sw,sh,aspect,t); outtag.textContent=aspect;
+    zval.textContent=t.zoom.toFixed(2)+'×'; val.textContent=offLabel(t.x); yval.textContent=yLabel(t.y);
+    off.disabled = !(c.sx>1); offy.disabled = !(c.sy>1);   // disable an axis with no slack
+    hint.textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${aspect}.`
+                          : 'Could not read video size — framing still applies.';
+  }
   document.getElementById('pvid').addEventListener('loadedmetadata',redraw);
-  off.addEventListener('input',redraw);
+  outvid.addEventListener('loadedmetadata',redraw);
+  [zoom,off,offy].forEach(el=>el.addEventListener('input',redraw));
+  window.addEventListener('resize',()=>layoutOut(outframe,outvid,sw,sh,aspect,TF[aspect]));
   document.querySelectorAll('#pasps .asp').forEach(el=>el.addEventListener('click',()=>{
     document.querySelectorAll('#pasps .asp').forEach(x=>x.classList.remove('active'));
-    el.classList.add('active'); aspect=el.dataset.a; redraw(); }));
-  redraw();
+    el.classList.add('active'); aspect=el.dataset.a; syncControls(); redraw(); }));
+  document.getElementById('preset').addEventListener('click',()=>{ TF[aspect]={zoom:1,x:0,y:0}; syncControls(); redraw(); });
+  document.getElementById('pcopy').addEventListener('click',()=>{
+    const t=TF[aspect]; ASPECTS.forEach(a=>{ TF[a]={zoom:t.zoom,x:t.x,y:t.y}; }); redraw(); });
+  syncControls(); redraw();
   document.getElementById('runbtn').addEventListener('click',async ev=>{
     const btn=ev.target; btn.disabled=true; btn.textContent='Starting…';
     const fd=new FormData();
-    fd.append('x_offset',off.value); fd.append('max_clips',document.getElementById('omax').value);
+    fd.append('transforms',JSON.stringify(TF)); fd.append('x_offset',TF['9:16'].x);
+    fd.append('max_clips',document.getElementById('omax').value);
     fd.append('model',document.getElementById('omodel').value); fd.append('captions',document.getElementById('ocaps').value);
     const r=await fetch(`/api/job/${JOB}/run`,{method:'POST',body:fd});
     if(r.ok){ previewBuilt=false; m.innerHTML=''; startPolling(); }

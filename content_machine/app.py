@@ -67,7 +67,8 @@ def media_url(path: str | Path) -> str:
 
 
 def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
-                  x_offset: float, captions_mode: str) -> None:
+                  x_offset: float, captions_mode: str,
+                  transforms: dict | None = None) -> None:
     job = Job.load(job_id)
     RUNNING[job.job_id] = {"error": None}
     with job_log(job.job_id):
@@ -85,7 +86,8 @@ def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                 RUNNING[job.job_id]["error"] = msg
                 job.update_stage("render", "error", error=msg)
                 return
-            render.render_job(job, x_offset=x_offset, caption_mode=captions_mode)
+            render.render_job(job, x_offset=x_offset, caption_mode=captions_mode,
+                              transforms=transforms)
             log.info("=== pipeline complete: %s ===", job.job_id)
         except Exception as e:  # surface failure on whichever stage was running
             RUNNING[job.job_id]["error"] = str(e)
@@ -152,6 +154,7 @@ def _job_payload(job: Job) -> dict:
                 "captions": c.get("captions"),
                 "thumb": media_url(c["thumb"]) if c.get("thumb") else None,
                 "outputs": {a: media_url(p) for a, p in c.get("outputs", {}).items()},
+                "transforms": c.get("transforms", {}),
             })
     # rationale + timing live in clips.json
     if job.clips_json_path.exists():
@@ -224,10 +227,29 @@ async def upload(video: UploadFile = File(...)):
     return RedirectResponse(f"/job/{job_id}", status_code=303)
 
 
+def _parse_transforms(raw: str) -> dict | None:
+    """Parse the per-aspect transforms JSON from a form field; tolerate junk."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    clean = {}
+    for aspect, t in data.items():
+        if aspect in config.ASPECT_RATIOS and isinstance(t, dict):
+            clean[aspect] = {"zoom": t.get("zoom", 1.0), "x": t.get("x", 0.0),
+                             "y": t.get("y", 0.0)}
+    return clean or None
+
+
 @app.post("/api/job/{job_id}/run")
 def run_job(job_id: str, model: str = Form(""), max_clips: int = Form(6),
-            x_offset: float = Form(0.0), captions: str = Form("overlay")):
-    """Start the pipeline for a staged job using the user-chosen crop + options."""
+            x_offset: float = Form(0.0), captions: str = Form("overlay"),
+            transforms: str = Form("")):
+    """Start the pipeline for a staged job using the user-chosen framing + options."""
     if not (config.DATA_DIR / job_id / "job.json").exists():
         raise HTTPException(404, "Job not found")
     job = Job.load(job_id)
@@ -237,14 +259,16 @@ def run_job(job_id: str, model: str = Form(""), max_clips: int = Form(6),
     src = next(job.data_dir.glob("source.*"), None)
     if src is None:
         raise HTTPException(400, "Source video missing")
+    tf = _parse_transforms(transforms)
     manifest["awaiting_run"] = False
     manifest["run_params"] = {"model": model or None, "max_clips": max_clips,
-                              "x_offset": x_offset, "captions": captions}
+                              "x_offset": x_offset, "captions": captions,
+                              "transforms": tf}
     job.save_manifest(manifest)
-    log.info("run requested: job %s (x_offset=%.2f, max_clips=%d, captions=%s)",
-             job_id, x_offset, max_clips, captions)
+    log.info("run requested: job %s (transforms=%s, x_offset=%.2f, max_clips=%d, captions=%s)",
+             job_id, "yes" if tf else "no", x_offset, max_clips, captions)
     threading.Thread(target=_run_pipeline,
-                     args=(job_id, src, model or None, max_clips, x_offset, captions),
+                     args=(job_id, src, model or None, max_clips, x_offset, captions, tf),
                      daemon=True).start()
     return {"ok": True}
 
