@@ -20,6 +20,10 @@ per ratio, edit caption text/timing, mute/adjust audio; saved non-destructively 
 `edit.json` and re-rendered per aspect (only changed ratios re-encode).
 **Honest progress** — a weighted master bar plus per-stage bars (live whisper %
 and per-clip render counts); clips appear in the grid as each finishes.
+**GPU-accelerated, never fragile** — rendering uses your GPU's hardware H.264
+encoder (NVENC on Windows, VideoToolbox on Mac) when it's usable, and silently
+falls back to CPU `libx264` if it isn't — so it's faster where it can be and
+**never breaks**. See [Hardware acceleration](#-hardware-acceleration).
 
 ## Quick start
 
@@ -30,9 +34,11 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # vendors static ff
 .venv\Scripts\python.exe -m content_machine.cli serve        # http://127.0.0.1:8000
 ```
 
-`setup.ps1` downloads a static **full** ffmpeg build and the prebuilt `whisper-blas-bin-x64`
-release into `vendor/` (gitignored) — no Homebrew, cmake, or compiler required. Needs
-**Claude Code logged in** (`claude login`) for the selection step.
+`setup.ps1` downloads a **pinned, NVENC-capable ffmpeg 7.1** build and the prebuilt
+`whisper-blas-bin-x64` release into `vendor/` (gitignored) — no Homebrew, cmake, or
+compiler required. (ffmpeg is pinned to 7.1 because bleeding-edge builds need NVIDIA
+driver ≥610 for NVENC; 7.1's NVENC works on current drivers. If NVENC can't init, the
+app just uses CPU x264.) Needs **Claude Code logged in** (`claude login`) for selection.
 
 ### macOS / Apple Silicon
 
@@ -65,13 +71,40 @@ the selection step shells out to `claude -p` using your subscription.
 Everything is staged and cached: re-running reuses the transcript/selection and only
 re-renders, and a crash resumes from the last completed stage.
 
+## ⚡ Hardware acceleration
+
+The render's H.264 **encode** is offloaded to your GPU when possible; decode and the
+crop/scale/caption filters stay on the CPU (mixing GPU decode with CPU filters is
+fragile, so we don't). At startup the app **probes** the GPU encoder once and caches
+the verdict; if it can't init, or fails mid-encode, it transparently re-runs that
+encode on `libx264` — **an output is never missing or corrupt.** So this is purely
+additive: faster where the GPU helps, identical to before where it doesn't.
+
+| Platform | Encoder | Transcribe |
+|----------|---------|-----------|
+| **Windows** (NVIDIA) | `h264_nvenc` (NVENC) — needs the pinned ffmpeg 7.1 | CPU whisper (BLAS) — fast (~9× realtime) |
+| **macOS** (Apple Silicon) | `h264_videotoolbox` | whisper.cpp **Metal** (GPU) |
+| no usable GPU | `libx264` (CPU) | CPU whisper |
+
+Measured numbers and the reasoning behind these choices (including why Windows GPU
+*transcription* is intentionally **not** used on Blackwell GPUs) are in
+[`BENCHMARKS.md`](BENCHMARKS.md). Run your own:
+
+```
+python scripts/benchmark.py EnlayeParis.mp4 --seconds 30
+```
+
+Force CPU encoding (A/B test, or if you suspect a GPU issue): set `CM_FORCE_CPU=1`.
+
 ## Layout
 
 ```
 content_machine/   config, jobs, transcribe, select, render, captions, app (FastAPI), cli
   templates/       index.html, job.html
-scripts/setup.sh   one-shot local setup
-tests/             pytest (27 tests, no network)
+scripts/setup.{sh,ps1}  one-shot local setup (macOS / Windows)
+content_machine/hwaccel.py  GPU encoder probe + profile + CPU fallback
+scripts/benchmark.py    GPU-vs-CPU render benchmark + ffprobe validation
+tests/             pytest (55 tests, no network)
 vendor/whisper.cpp built locally by setup.sh (gitignored)
 data/              your videos, transcripts, clips (gitignored, local-only)
 .planning/         GSD planning + research + per-phase plans/summaries
