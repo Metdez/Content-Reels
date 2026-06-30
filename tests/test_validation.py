@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 
-from conftest import seed_job
-
 from content_machine import config, render
+from tests.conftest import seed_job
 
 _MP4 = bytes.fromhex("0000001c66747970697336300000020069736f6d69736f3261766331") + b"\x00" * 16
 

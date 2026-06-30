@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from conftest import seed_job
+from tests.conftest import seed_job
 
 # A tiny valid-enough mp4 body for multipart uploads (matches conftest's placeholder).
 _MP4 = bytes.fromhex("0000001c66747970697336300000020069736f6d69736f3261766331") + b"\x00" * 16

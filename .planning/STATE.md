@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 12
-  total_plans: 12
-  completed_plans: 12
-  percent: 86
+  completed_phases: 13
+  total_plans: 13
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -24,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 35 of 36 — next up (Exhaustive Playwright E2E Suite); Phases 23–34 complete (12/14). **Feature-adoption track (33–34) DONE.** Capstone track (35–36) begins.
+Phase: 36 of 36 — FINAL (Final Integration Verification & Docs); Phases 23–35 complete (13/14).
 Plan: —
-Status: Phase 34 (karaoke captions) shipped — `karaoke` caption mode (word-by-word highlight from words[]) via PNG overlays; hyperframes gated (can't run here: Node 20<22 + no Chrome) with PROVEN PNG fallback (WinError 193 → PNG karaoke, highlight intact); live ffprobe: h264 1080x1920 + aac, 40 word PNGs; 211 pass; ruff clean; coverage 92.4%. KNOWN: PNG-karaoke is slow on long/wordy clips (1 overlay/word) — opt-in, default overlay unaffected, documented for P36. Running autonomously.
-Last activity: 2026-06-30 — Phase 34 complete (CAPS-01, CAPS-02)
-
-NOTE: seeded fixture e2eseed0001 clip1/9x16 was overwritten by the live karaoke render — re-seed before P35 E2E for a clean baseline.
+Status: Phase 35 (E2E suite) shipped — pytest-playwright self-contained harness + 34 deterministic UI specs + real-ffmpeg render spec; CI e2e job (apt ffmpeg + chromium). Fixed 2 test-infra bugs (harness pipe-deadlock that hung renders; conftest import collision). Default unit suite 211 pass; e2e UI 34 pass; slow real-render passes isolated (16s); ruff clean. Running autonomously.
+Last activity: 2026-06-30 — Phase 35 complete (E2E-01…06)
 
 ### v6 progress
 
