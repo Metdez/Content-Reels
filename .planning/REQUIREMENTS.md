@@ -57,6 +57,34 @@ Deferred to future release. Tracked but not in current roadmap.
 - **DIST-02**: Direct LinkedIn publishing / scheduling
 - **DIST-03**: Batch/queued processing of multiple videos
 
+## v3 Requirements
+
+Active milestone — Per-aspect zoom/crop + focused clip editor + progress bars. Phases 9–12.
+
+### Reframe & Zoom
+
+- [ ] **ZOOM-01**: User can set an independent zoom level (≥1.0, where 1.0 = max-fit crop) for each aspect ratio of a clip
+- [ ] **ZOOM-02**: User can pan the crop window horizontally and vertically (x, y ∈ [-1,1]) within the slack that the aspect + zoom create
+- [ ] **ZOOM-03**: Each aspect ratio carries its own `{zoom, x, y}` transform; transforms are set as run-wide defaults pre-run and can be overridden per clip
+- [ ] **ZOOM-04**: Zoom/pan changes preview live in the browser via CSS transform, deferring the ffmpeg render until the user commits
+- [ ] **ZOOM-05**: The pre-run preview lets the user dial in per-aspect zoom/pan that become the job's default framing
+
+### Clip Editor
+
+- [ ] **EDIT-01**: User can open a focused full-screen editor for any rendered clip at `/job/{id}/clip/{idx}/edit` and return to the grid with edits reflected
+- [ ] **EDIT-02**: User can trim a clip's in/out points on a scrubber, with snap-to-sentence using word timings
+- [ ] **EDIT-03**: User can reframe per aspect (zoom/pan) inside the editor, including a "copy this framing to all aspects" action
+- [ ] **EDIT-04**: User can edit caption text and per-segment timing, and toggle captions on/off
+- [ ] **EDIT-05**: User can keep, mute, or set the volume of a clip's audio
+- [ ] **EDIT-06**: Edits are stored non-destructively in a per-clip `edit.json`; re-render applies them per aspect (only the changed aspects re-encode)
+
+### Progress
+
+- [ ] **PROG-01**: The job page shows a per-section progress bar for transcribe (driven by whisper-cli output %), select, and render (per-aspect-per-clip counts)
+- [ ] **PROG-02**: A master progress bar shows weighted overall completion across all stages
+- [ ] **PROG-03**: Each clip/aspect appears in the review grid the moment it finishes rendering, not only at the end
+- [ ] **PROG-04**: Progress bars are visually verified to look good (Playwright screenshots at multiple progress states)
+
 ## Out of Scope
 
 Explicitly excluded. Documented to prevent scope creep.
@@ -99,6 +127,31 @@ Explicitly excluded. Documented to prevent scope creep.
 - Mapped to phases: 20
 - Unmapped: 0 ✓
 
+### v3 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| ZOOM-01 | Phase 9 | Pending |
+| ZOOM-02 | Phase 9 | Pending |
+| ZOOM-03 | Phase 9 | Pending |
+| ZOOM-04 | Phase 10 | Pending |
+| ZOOM-05 | Phase 10 | Pending |
+| PROG-01 | Phase 11 | Pending |
+| PROG-02 | Phase 11 | Pending |
+| PROG-03 | Phase 11 | Pending |
+| PROG-04 | Phase 11 | Pending |
+| EDIT-01 | Phase 12 | Pending |
+| EDIT-02 | Phase 12 | Pending |
+| EDIT-03 | Phase 12 | Pending |
+| EDIT-04 | Phase 12 | Pending |
+| EDIT-05 | Phase 12 | Pending |
+| EDIT-06 | Phase 12 | Pending |
+
+**v3 Coverage:**
+- v3 requirements: 15 total
+- Mapped to phases: 15
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-29 after initial definition*
+*Last updated: 2026-06-30 — v3 requirements (zoom/crop + editor + progress) defined*

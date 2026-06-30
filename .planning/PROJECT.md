@@ -8,6 +8,15 @@ A local-first webapp that turns a long video (talk, webinar, podcast) into short
 
 Drop in one video and get back several genuinely good, caption-burned clips in multiple aspect ratios — without uploading the source anywhere or paying per-token API costs.
 
+## Current Milestone: v3 — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
+
+**Goal:** Give the user real creative control over every clip — independent zoom/pan framing per aspect ratio (before AND after the run), a focused non-destructive per-clip editor, and honest master + per-section progress bars — so post-processing stops being a "stuck waiting on a black screen" experience.
+
+**Target features:**
+- Per-aspect transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}` replacing the single scalar `x_offset`; each clip can override; live CSS preview defers the ffmpeg render until the user commits.
+- Focused clip editor (`/job/{id}/clip/{idx}/edit`): trim (snap-to-sentence), reframe per aspect (zoom/pan + copy-to-all), caption text/timing edits + toggle, audio keep/mute/volume — non-destructive `edit.json`, per-aspect re-render, back-to-grid.
+- Master + per-section progress bars (transcribe % from whisper-cli output, render per-aspect-per-clip counts, weighted master); clips appear as each finishes; visually screenshot-verified.
+
 ## Requirements
 
 ### Validated
@@ -23,6 +32,9 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 - [ ] Burn captions into clips from the transcript timing
 - [ ] Store all transcripts and clips locally, browsable by source video
 - [ ] Review suggested clips in the UI and download the ones you want
+- [ ] Set independent zoom + pan framing per aspect ratio, previewed live before render (v3)
+- [ ] Edit each clip in a focused editor — trim, reframe, captions, audio — non-destructively (v3)
+- [ ] See honest master + per-section progress while a job runs (v3)
 
 ### Out of Scope
 
@@ -31,6 +43,7 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 - Per-token Anthropic API billing as the default path — clip selection runs through the Claude Code subscription
 - Multi-user / accounts / hosting — single local user for v1
 - AI avatars / generated footage — this clips existing video, not synthesizes it
+- Full multi-track timeline NLE (splice/reorder/transitions) — v3 editor is a focused per-clip tool; a real NLE is unreliable on a local ffmpeg pipeline and overkill for short vertical clips
 
 ## Context
 
@@ -79,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after initialization*
+*Last updated: 2026-06-29 — milestone v3 started (per-aspect zoom/crop + clip editor + progress bars)*

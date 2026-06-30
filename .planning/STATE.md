@@ -1,13 +1,16 @@
 ---
-gsd_state_version: '1.0'
-status: complete
-milestone: v2
+gsd_state_version: 1.0
+milestone: v3
+milestone_name: — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
+status: planning
+last_updated: "2026-06-30T01:19:47.175Z"
+last_activity: 2026-06-30
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,14 +24,13 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Milestone: v2 — Cross-Platform + Interactive Crop Preview (autonomous)
-Phase: 8 of 8 complete — milestone delivered
-Status: Phases 5-8 built + verified live on Windows via browser. Full EnlayeParis.mp4 (13:39) run end-to-end: upload→preview→run→transcribe→6 clips→18 outputs (all aac audio, correct dims), captions fit all ratios, reframe re-renders with audio.
-Last activity: 2026-06-29 — branch feat/windows-port-crop-preview; commits 0889a5c (P5), 4839aef (P6-8)
-
-Progress: [██████████] 100% (8/8 phases)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-30 — Milestone v3 started
 
 ### Verified live (v2, Windows 11, real binaries + browser)
+
 - P5 Windows port: transcribe(whisper-cli.exe) + select(claude.CMD) + render(ffmpeg) end-to-end; 28 tests pass
 - P6 crop preview: upload stages → preview crop box+slider (matches compute_crop) → Run propagates x_offset
 - P7 UI: studio redesign, stage stepper, clean live log (UTF-8)
@@ -36,10 +38,12 @@ Progress: [██████████] 100% (8/8 phases)
 - Full EnlayeParis.mp4: 6 clips selected with strong hooks, all 3 ratios each, thumbnails in review grid
 
 ### How to run
+
 - `bash scripts/setup.sh` (one-time), then `content-machine serve` → http://127.0.0.1:8000
 - CLI: `content-machine ingest <video>` → `select <job_id>` → `render <job_id>`
 
 ### Verified live
+
 - P1 transcription correct on known-content video + VAD on silence + caching
 - P2 `claude -p` selection (subscription) returns boundary-snapped clips + caching
 - P3 3 aspect ratios + visible captions + thumbnails
@@ -48,6 +52,7 @@ Progress: [██████████] 100% (8/8 phases)
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: —
 - Total execution time: 0 hours
@@ -59,6 +64,7 @@ Progress: [██████████] 100% (8/8 phases)
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
