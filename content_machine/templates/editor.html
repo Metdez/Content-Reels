@@ -103,6 +103,14 @@
   .applybar .status{color:var(--mut);font-size:13px}
   .applybar .sp{flex:1}
   .boot{padding:40px;text-align:center;color:var(--mut)}
+  /* always-visible flow-state pill */
+  .pill{font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid var(--line);
+    background:#131a26;color:var(--mut);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .pill.dirty{color:var(--warn);border-color:rgba(210,153,34,.5);background:rgba(210,153,34,.08)}
+  .pill.rendering{color:var(--accent2);border-color:rgba(109,94,252,.5);background:rgba(109,94,252,.1)}
+  .pill.done{color:var(--ok);border-color:rgba(63,185,80,.45);background:rgba(63,185,80,.08)}
+  .pill.error{color:var(--err);border-color:rgba(248,81,73,.5);background:rgba(248,81,73,.1)}
+  .pill.rendering::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1s infinite}
 </style>
 </head>
 <body>
@@ -110,6 +118,7 @@
   <button class="back" id="back">← Back to clips</button>
   <h1 id="title">Edit clip</h1>
   <span class="sp"></span>
+  <span class="pill" id="pill">Idle</span>
   <span class="small" id="dims"></span>
 </header>
 <main id="main"><div class="boot" id="bootmsg">Loading editor…</div></main>
@@ -191,17 +200,32 @@ function renderRStat(s){
   else sum=`${done}/${total}`;
   document.getElementById('rsummary').textContent=sum;
 }
+let lastFlow='idle';   // 'idle' | 'done' | 'error' — last settled render outcome
+function setPill(txt,cls){ const p=document.getElementById('pill'); if(p){ p.textContent=txt; p.className='pill '+cls; } }
+function updateFlowPill(){
+  if(rerenderActive) return;                     // the poller owns the pill while rendering
+  if(dirtyClip||dirtyAspects.size>0) setPill('● Unsaved changes','dirty');
+  else if(lastFlow==='error') setPill('⚠ Render failed','error');
+  else if(lastFlow==='done') setPill('✓ Rendered','done');
+  else setPill('Idle','idle');
+}
 function pollRender(){
   fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`).then(r=>r.json()).then(s=>{
     renderRStat(s);
     const busy=s.active||s.queued||s.status==='rendering'||s.status==='queued';
-    if(!busy){
+    if(busy){
+      const done=Object.values(s.aspects||{}).filter(v=>v==='done').length;
+      const total=Object.keys(s.aspects||{}).length||1;
+      setPill(`⟳ Rendering ${done}/${total}${s.queued?' · +1':''}`,'rendering');
+    } else {
       clearInterval(rerenderTimer); rerenderTimer=null; rerenderActive=false;
+      lastFlow = s.status==='error' ? 'error' : 'done';
       const st=document.getElementById('status'); if(st){
         st.textContent = s.status==='error'
-          ? '⚠ Re-render failed — '+(s.error||'see the job log')
+          ? '⚠ Re-render failed — '+(s.error||'see the job log')+'. Your clip’s previous version is untouched.'
           : '✓ Re-render complete — keep editing or head back to clips.';
       }
+      updateFlowPill();
     }
   }).catch(()=>{});
 }
@@ -358,7 +382,7 @@ function wire(){
     const nb=nearestBound(t); let snapped=false; if(nb.dist*(winEnd-winStart)<0.6 || nb.dist<0.4){ t=nb.t; snapped=true; }
     if(drag==='in') trimIn=Math.max(winStart,Math.min(t,trimOut-0.3));
     else trimOut=Math.min(winEnd,Math.max(t,trimIn+0.3));
-    $('snap').textContent=snapped?'snapped to sentence':''; renderTrim(); markDirty(); dirtyClip=true; }
+    dirtyClip=true; $('snap').textContent=snapped?'snapped to sentence':''; renderTrim(); markDirty(); }
   function endDrag(){ drag=null; $('snap').textContent=''; document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',endDrag); }
   function startDrag(which){ return e=>{ drag=which; e.preventDefault(); document.addEventListener('pointermove',onMove); document.addEventListener('pointerup',endDrag); }; }
   $('hin').addEventListener('pointerdown',startDrag('in')); $('hout').addEventListener('pointerdown',startDrag('out'));
@@ -398,7 +422,8 @@ function wire(){
 
   /* ---- apply ---- */
   function markDirty(){ const any=dirtyClip||dirtyAspects.size>0; $('apply').disabled=!any;
-    $('status').textContent=any?(dirtyClip?'Trim/captions/audio changed → all ratios re-render':`Framing changed: ${[...dirtyAspects].join(', ')}`):'No changes yet.'; }
+    $('status').textContent=any?(dirtyClip?'Trim/captions/audio changed → all ratios re-render':`Framing changed: ${[...dirtyAspects].join(', ')}`):'No changes yet.';
+    updateFlowPill(); }
   $('cancel').addEventListener('click',()=>location.href=`/job/${JOB}`);
   $('apply').addEventListener('click',async ()=>{
     const aspectsToRender = dirtyClip ? ASPECTS : [...dirtyAspects];
@@ -407,19 +432,21 @@ function wire(){
       captions: capsOn ? (capsEdited?{mode:'overlay',segments:caps}:{mode:'overlay'}) : {mode:'none'},
       audio:audio, aspects:aspectsToRender };
     const queued = rerenderActive;
+    rerenderActive = true;                       // committing to a render now
     // Page stays interactive: clear the dirty markers (this edit is captured),
     // so any further change re-arms Apply and simply queues the next render.
     dirtyClip=false; dirtyAspects=new Set(); renderTabs(); markDirty();
     $('status').textContent = queued
       ? 'Queued — renders after the current one.'
       : 'Re-rendering in the background — you can keep editing.';
+    setPill(queued?'⟳ Queued':'⟳ Rendering…','rendering');
     document.getElementById('rendercard').style.display='block';
     try{
       const r=await fetch(`/api/job/${JOB}/clip/${IDX}/edit`,
         {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(!r.ok){ $('status').textContent='Failed: '+(await r.text()); return; }
+      if(!r.ok){ rerenderActive=false; lastFlow='error'; $('status').textContent='Failed: '+(await r.text()); setPill('⚠ Failed to start','error'); return; }
       startPolling();
-    }catch(e){ $('status').textContent='Error: '+e; }
+    }catch(e){ rerenderActive=false; lastFlow='error'; $('status').textContent='Error: '+e; setPill('⚠ Failed to start','error'); }
   });
 
   renderTabs(); sync(); redraw(); renderBounds(); renderTrim(); renderCaps(); markDirty();

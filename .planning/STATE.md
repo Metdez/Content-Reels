@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v5
 milestone_name: — Editing UX Revamp
-status: planning
-last_updated: "2026-06-30T12:40:07.694Z"
+status: complete
+last_updated: "2026-06-30T13:05:00.000Z"
 last_activity: 2026-06-30
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 3
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -24,12 +24,14 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 18 of 19 complete
+Phase: 19 of 19 complete — milestone v5 delivered
 Plan: —
-Status: Phases 17–18 built + verified live in the browser on EnlayeParis.mp4 (clip 1). Next: Phase 19 (edit-flow polish + full live walkthrough).
-Last activity: 2026-06-30 — Phase 18 complete (EDITUX-05..06)
+Status: All 3 v5 phases (17–19) built + verified live on Windows. 57 tests pass. Editor re-render is non-blocking with live per-aspect progress + queue, framing is direct-manipulation (scroll/drag) + magnifier, and the flow has an always-visible state pill. Working on branch feat/windows-port-crop-preview (not merged to main).
+Last activity: 2026-06-30 — Phase 19 complete (EDITUX-07); milestone v5 complete
 
 ### Verified live (v5, Windows 11, real ffmpeg/NVENC + browser)
+
+- P19 edit-flow polish + verification: added an always-visible header state pill (Idle → ● Unsaved changes → ⟳ Rendering N/3 → ✓ Rendered / ⚠ Render failed) driven by one `updateFlowPill()` state function; render failures now surface a readable message ("⚠ Re-render failed — <msg>. Your clip's previous version is untouched.") instead of a silent hang (unit-tested via a forced exception → tracker `status:error`, aspect `error`). Fixed a pre-existing ordering bug where the trim-drag handler called `markDirty()` before setting `dirtyClip` (mislabeled a trim as "Framing changed"). Full live walkthrough on EnlayeParis clip 1: Idle→Unsaved→Rendering→Rendered, ffprobe confirms all 3 re-rendered ratios valid (9:16=1080×1920, 1:1=1080×1080, 16:9=1920×1080, all h264+aac, 16.84s reflecting the new trim). 57 tests pass.
 
 - P18 direct-manipulation framing + magnifier: on the output preview, scroll-wheel zooms the crop (`exp(-deltaY)` smoothing, clamped 1–3×) and dragging pans it with a grab-the-image mapping (`x -= 2·ddx·cw/(fw·sx)`), only mutating `TF.{zoom,x,y}` so the existing sliders stay a live fallback. Verified live: wheel 1→1.62×, drag set x=0.14/y=0.34 with correct direction + slider sync. **Pixel-parity confirmed** — JS `computeCrop(1920,1080,'9:16',0.14,1.6,0.34)`=`{x:878,y:271,w:380,h:674}` equals Python `compute_crop(...)`=`(w380,h674,x878,y271)`. A `🔍 Inspect` button cycles MAG 1→1.5→2× (CAP=420·MAG, stage goes single-column) to enlarge the preview for detail without touching the output transform (verified: x/y/zoom unchanged after magnify). 56 tests pass.
 

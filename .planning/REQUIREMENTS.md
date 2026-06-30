@@ -131,7 +131,7 @@ Active milestone — Editing UX Revamp (background re-render + live progress, di
 
 ### Flow Clarity
 
-- [ ] **EDITUX-07**: The edit→crop flow has clear, always-visible states (idle / unsaved changes / rendering / done / error) so the user is never left guessing whether a render is still running, and errors surface a readable message instead of a silent hang
+- [x] **EDITUX-07**: The edit→crop flow has clear, always-visible states (idle / unsaved changes / rendering / done / error) so the user is never left guessing whether a render is still running, and errors surface a readable message instead of a silent hang
 
 ## Out of Scope
 
@@ -239,11 +239,12 @@ Explicitly excluded. Documented to prevent scope creep.
 | EDITUX-04 | Phase 17 | Done |
 | EDITUX-05 | Phase 18 | Done |
 | EDITUX-06 | Phase 18 | Done |
-| EDITUX-07 | Phase 19 | Pending |
+| EDITUX-07 | Phase 19 | Done |
 
 **v5 Coverage:**
 - v5 requirements: 7 total
 - Mapped to phases: 7 (Phase 17: 4 · Phase 18: 2 · Phase 19: 1)
+- Delivered: 7 Done ✓
 - Unmapped: 0 ✓
 
 ---

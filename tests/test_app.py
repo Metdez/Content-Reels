@@ -234,6 +234,26 @@ def test_rerender_queues_second_edit_while_busy(monkeypatch, tmp_path):
     assert tr["status"] == "done"
 
 
+def test_rerender_failure_surfaces_error(monkeypatch, tmp_path):
+    """A render exception must settle as a readable error, not a silent hang."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app, render
+    d = _make_job(tmp_path, "eeee", {"render": {"status": "done"}})
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
+
+    def boom(job_id, idx, edit=None, aspects=None, on_aspect_done=None, **kw):
+        raise RuntimeError("ffmpeg exploded")
+    monkeypatch.setattr(render, "rerender_one", boom)
+
+    app.save_clip_edit("eeee", 1, payload={"start": 2.0, "end": 6.0, "aspects": ["9:16"]})
+    tr = _wait_rerender(app, ("eeee", 1))
+    assert tr["status"] == "error"
+    assert "ffmpeg exploded" in tr["error"]
+    assert tr["aspects"]["9:16"] == "error"
+    status = json.loads(app.rerender_status("eeee", 1).body)
+    assert status["status"] == "error" and status["error"] and status["active"] is False
+
+
 def test_save_clip_edit_rejects_too_short_trim(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app
