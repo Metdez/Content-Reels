@@ -502,7 +502,7 @@ Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISC
 - [x] **Phase 25: HTTP API Integration Tests** - tests/test_api.py (+22); app.py 74.5%→85.4%, overall 92.2%; 4 findings (ingest-revert→P27, VAL-05→P28) ✓
 - [x] **Phase 26: Reliability — Atomic Manifests + Locking** - atomic_write_text + read_json (Windows-retry) + per-job locked upsert-by-index; bug #1 fixed; +4 tests, 182 pass ✓
 - [x] **Phase 27: Reliability — Non-blocking Upload + State Persistence + Lifecycle** - sync upload (threadpool), manifest-backed error surfacing + lifespan shutdown, render semaphore (CM_MAX_RENDERS); bug #6 fixed; +4 tests, 186 pass ✓
-- [ ] **Phase 28: Input Validation & Hardening** - trim/zoom bounds, `claude -p` retry, upload-name collision, friendly empty-transcript, `/media` scoping, platform hints
+- [x] **Phase 28: Input Validation & Hardening** - trim/zoom bounds, run_claude retry/backoff + per-chunk skip, uuid upload staging, friendly empty-transcript, MediaFiles allowlist, platform hints; bugs #2/#3/#4/#7 fixed; 196 pass ✓
 - [ ] **Phase 29: Shared Crop-Math Module + Parity Test** - one `crop.js`, uses `source_dims`, golden-vector parity vs Python in CI
 - [ ] **Phase 30: Frontend Robustness — Error Surfacing + Polling** - surface failures, stop 404 loops, retry cap, replace `alert()`, keep dirty until POST ok, safe boot
 - [ ] **Phase 31: Frontend Correctness — Captions, Audio, Validation** - real re-derive-for-trim, source scrub + audition, caption time validation, consistent cache-busting

@@ -81,6 +81,8 @@ def audio_chain(vol: float | None) -> str:
 # Per-aspect framing transform. zoom>=1 (1.0 = max-fit crop, larger = tighter);
 # x/y in [-1,1] pan across whatever horizontal/vertical slack the aspect+zoom create.
 DEFAULT_TRANSFORM = {"zoom": 1.0, "x": 0.0, "y": 0.0}
+# VAL-01: upper bound on zoom so a runaway/garbage value can't crop to a sliver.
+MAX_ZOOM = 5.0
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -100,7 +102,7 @@ def normalize_transforms(transforms: dict | None, x_offset: float = 0.0,
     for a in aspects:
         t = (transforms or {}).get(a) or {}
         out[a] = {
-            "zoom": max(1.0, float(t.get("zoom", DEFAULT_TRANSFORM["zoom"]))),
+            "zoom": min(MAX_ZOOM, max(1.0, float(t.get("zoom", DEFAULT_TRANSFORM["zoom"])))),
             "x": _clamp(float(t.get("x", x_offset)), -1.0, 1.0),
             "y": _clamp(float(t.get("y", DEFAULT_TRANSFORM["y"])), -1.0, 1.0),
         }
@@ -269,7 +271,7 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
     fires as each aspect finishes; `prev_outputs` seeds outputs so a partial
     re-render keeps untouched aspects.
     """
-    config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
+    config.require_tool(config.FFMPEG, config.ffmpeg_hint())
     src = next(job.data_dir.glob("source.*"))
     src_w, src_h = probe_dims(src)
     enc = hwaccel.select_encoder()              # GPU if usable, else x264 — probed once

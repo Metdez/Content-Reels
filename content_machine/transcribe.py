@@ -47,7 +47,7 @@ def build_ffmpeg_audio_cmd(video: Path, out_wav: Path) -> list[str]:
 
 
 def extract_audio(video: Path, out_wav: Path) -> Path:
-    config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
+    config.require_tool(config.FFMPEG, config.ffmpeg_hint())
     run(build_ffmpeg_audio_cmd(video, out_wav), log, "extract audio (16kHz mono)")
     return out_wav
 
@@ -82,10 +82,7 @@ def parse_whisper_progress(line: str) -> int | None:
 
 def run_whisper(audio: Path, model: Path, out_prefix: Path,
                 language: str | None = None, on_progress=None) -> Path:
-    config.require_tool(
-        config.WHISPER_CLI,
-        "Build whisper.cpp: bash scripts/setup.sh (clones + builds vendor/whisper.cpp)",
-    )
+    config.require_tool(config.WHISPER_CLI, config.whisper_hint())
     if not model.exists():
         name = model.stem.removeprefix("ggml-")  # ggml-small.en.bin -> small.en
         raise FileNotFoundError(

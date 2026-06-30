@@ -14,6 +14,7 @@ import os
 import shutil
 import threading
 import traceback
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -72,8 +73,23 @@ async def _lifespan(_app):
     log.info("shutdown: signalled background workers to stop")
 
 
+# VAL-05: the data dir holds media AND job metadata (job.json / transcript.json /
+# logs). Serving the whole tree leaks those. MediaFiles serves only an allowlist of
+# media extensions and 404s everything else — the UI only ever loads mp4 + jpg/png.
+MEDIA_EXTS = {".mp4", ".mov", ".webm", ".m4v", ".jpg", ".jpeg", ".png", ".gif"}
+
+
+class MediaFiles(StaticFiles):
+    """StaticFiles that only serves media files (VAL-05); 404s non-media paths."""
+
+    async def get_response(self, path, scope):
+        if Path(path).suffix.lower() not in MEDIA_EXTS:
+            raise HTTPException(404)
+        return await super().get_response(path, scope)
+
+
 app = FastAPI(title="Content Machine", lifespan=_lifespan)
-app.mount("/media", StaticFiles(directory=str(config.DATA_DIR)), name="media")
+app.mount("/media", MediaFiles(directory=str(config.DATA_DIR)), name="media")
 
 # job_id -> {"error": str|None} for surfacing background failures
 RUNNING: dict[str, dict] = {}
@@ -210,15 +226,25 @@ def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                  job.job_id, model or config.DEFAULT_MODEL, max_clips, captions_mode)
         try:
             import json as _json
+            no_moments_msg = ("No clip-worthy moments found. Try a longer video, lower "
+                              "the minimum clip length, or raise 'max clips'.")
             transcribe.transcribe(source, model=model, job=job)
+            # VAL-04: an empty/silent transcript would make select raise a raw
+            # ValueError("Transcript has no segments…"). Surface the same friendly
+            # "no moments" message on the select stage instead, mirroring 0-clips.
+            transcript = _json.loads(job.transcript_path.read_text()) \
+                if job.transcript_path.exists() else {}
+            if not transcript.get("segments"):
+                log.warning(no_moments_msg)
+                RUNNING[job.job_id]["error"] = no_moments_msg
+                job.update_stage("select", "error", error=no_moments_msg)
+                return
             clips_path = select.select_clips(job, max_clips=max_clips)
             n_clips = len(_json.loads(Path(clips_path).read_text()).get("clips", []))
             if n_clips == 0:
-                msg = ("No clip-worthy moments found. Try a longer video, lower the "
-                       "minimum clip length, or raise 'max clips'.")
-                log.warning(msg)
-                RUNNING[job.job_id]["error"] = msg
-                job.update_stage("render", "error", error=msg)
+                log.warning(no_moments_msg)
+                RUNNING[job.job_id]["error"] = no_moments_msg
+                job.update_stage("render", "error", error=no_moments_msg)
                 return
             with _RENDER_SLOTS:  # REL-05: bound concurrent GPU encodes
                 render.render_job(job, x_offset=x_offset, caption_mode=captions_mode,
@@ -363,7 +389,10 @@ def upload(video: UploadFile = File(...)):
         safe_name = safe_upload_name(video.filename)  # blocks path traversal
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    tmp = UPLOADS / safe_name
+    # VAL-03: stage under a unique nonce so two concurrent uploads of the same
+    # filename can't clobber each other's temp file. The final src path is derived
+    # from the content-hash job id below, so the nonce only scopes the staging file.
+    tmp = UPLOADS / f"{uuid.uuid4().hex}_{safe_name}"
     with open(tmp, "wb") as f:
         shutil.copyfileobj(video.file, f)
     # Each upload is its OWN run, even for an identical file: the job id is the
@@ -555,6 +584,17 @@ def save_clip_edit(job_id: str, idx: int, payload: dict = Body(...)):
         s, e = float(payload["start"]), float(payload["end"])
         if e - s < 0.5:
             raise HTTPException(400, "Clip must be at least 0.5s long")
+        # VAL-01: clamp the trim to valid source bounds — start>=0, end<=duration.
+        s = max(0.0, s)
+        duration = None
+        try:
+            tj = json.loads((config.DATA_DIR / job_id / "transcript.json").read_text())
+            segs = tj.get("segments", [])
+            duration = tj.get("duration") or (segs[-1]["end"] if segs else None)
+        except Exception:
+            duration = None  # missing/unreadable transcript -> skip the upper clamp
+        if duration is not None:
+            e = min(e, float(duration))
         edit["start"], edit["end"] = s, e
     if isinstance(payload.get("transforms"), dict):
         edit["transforms"] = payload["transforms"]

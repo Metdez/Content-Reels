@@ -228,14 +228,14 @@ def test_download_missing_clip_404(seeded_job):
     assert resp.status_code == 404
 
 
-def test_media_mount_serves_job_manifest(seeded_job):
-    """CHARACTERIZATION / VAL-05: the StaticFiles mount at /media is rooted at DATA_DIR,
-    so it serves the job MANIFEST (and every internal artifact) verbatim — an over-broad
-    static mount. Documented here as current behaviour, not endorsed. (app.py:64)"""
+def test_media_mount_denies_job_manifest(seeded_job):
+    """VAL-05: the /media mount now serves only an allowlist of media extensions,
+    so job metadata (job.json / transcript.json) is no longer leaked — it 404s,
+    while real media (source.mp4) still serves."""
     client, job_id, _ = seeded_job
-    resp = client.get(f"/media/{job_id}/job.json")
-    assert resp.status_code == 200
-    assert resp.json()["job_id"] == job_id
+    assert client.get(f"/media/{job_id}/job.json").status_code == 404
+    assert client.get(f"/media/{job_id}/transcript.json").status_code == 404
+    assert client.get(f"/media/{job_id}/source.mp4").status_code == 200
 
 
 def test_legacy_reframe_with_render_stubbed(seeded_job, monkeypatch):

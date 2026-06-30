@@ -78,6 +78,22 @@ AUDIO_SAMPLE_RATE = 16_000  # whisper.cpp requires 16kHz mono
 ASPECT_RATIOS = ("9:16", "1:1", "16:9")
 
 
+def ffmpeg_hint() -> str:
+    """Platform-aware install hint for ffmpeg/ffprobe (VAL-06)."""
+    if os.name == "nt":
+        return ("Install ffmpeg: run scripts/setup.ps1 "
+                "(drops vendored ffmpeg/ffprobe into vendor/bin)")
+    return "Install ffmpeg: brew install ffmpeg"
+
+
+def whisper_hint() -> str:
+    """Platform-aware build hint for whisper.cpp (VAL-06)."""
+    if os.name == "nt":
+        return ("Build whisper.cpp: run scripts/setup.ps1 "
+                "(clones + builds vendor/whisper.cpp)")
+    return "Build whisper.cpp: bash scripts/setup.sh (clones + builds vendor/whisper.cpp)"
+
+
 def require_tool(path: str | Path, hint: str) -> None:
     """Raise a clear, actionable error if a required local tool is missing."""
     p = Path(path)

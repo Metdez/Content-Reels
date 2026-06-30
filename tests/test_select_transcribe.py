@@ -67,36 +67,64 @@ def test_run_claude_happy_path_extracts_clips_from_chatty_result(monkeypatch):
     assert out["clips"][0]["end_seg"] == 2
 
 
-def test_run_claude_propagates_timeout(monkeypatch):
-    # CHARACTERIZATION: a timeout is re-raised verbatim — no retry/backoff.
+def test_run_claude_retries_then_raises_on_timeout(monkeypatch):
+    # Phase 28 (VAL-02): a timeout is retried up to `attempts` times with backoff,
+    # then surfaced as a clear RuntimeError (no raw TimeoutExpired leaking out).
     monkeypatch.setattr(s.config, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(s.time, "sleep", lambda *_a, **_k: None)  # no real backoff wait
+    calls = []
 
     def boom(*a, **k):
+        calls.append(1)
         raise subprocess.TimeoutExpired(cmd="claude", timeout=k.get("timeout", 1))
 
     monkeypatch.setattr(s.subprocess, "run", boom)
-    with pytest.raises(subprocess.TimeoutExpired):
-        s.run_claude("prompt", timeout=1)
-
-
-def test_run_claude_nonzero_exit_raises_runtimeerror(monkeypatch):
-    # CHARACTERIZATION: non-zero exit -> RuntimeError carrying code + stderr; no retry.
-    _stub_claude_proc(monkeypatch, returncode=2, stderr="boom: model overloaded")
     with pytest.raises(RuntimeError) as ei:
-        s.run_claude("prompt")
-    msg = str(ei.value)
-    assert "claude -p failed (2)" in msg
-    assert "boom: model overloaded" in msg
+        s.run_claude("prompt", timeout=1, attempts=3)
+    assert len(calls) == 3                      # retried, not single-shot
+    assert "after 3 attempt" in str(ei.value)
 
 
-def test_run_claude_chatty_nonjson_stdout_raises_jsondecodeerror(monkeypatch):
-    # BUG / Phase 28 target (select.py:130): run_claude assumes stdout is a JSON
-    # wrapper and calls json.loads(proc.stdout) with NO guard. If claude emits
-    # plain/chatty text on stdout (exit 0), this leaks a raw json.JSONDecodeError
-    # instead of a graceful, typed failure.
-    _stub_claude_proc(monkeypatch, stdout="Sure! Here are your clips, no JSON though.")
-    with pytest.raises(json.JSONDecodeError):
-        s.run_claude("prompt")
+def test_run_claude_retries_then_raises_on_nonzero_exit(monkeypatch):
+    # Phase 28 (VAL-02): non-zero exit is retried, then raised as a clear
+    # RuntimeError carrying the (None-safe) stderr tail.
+    monkeypatch.setattr(s.config, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(s.time, "sleep", lambda *_a, **_k: None)
+    calls = []
+    proc = types.SimpleNamespace(returncode=2, stdout="", stderr="boom: model overloaded")
+
+    def fake_run(*a, **k):
+        calls.append(1)
+        return proc
+
+    monkeypatch.setattr(s.subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError) as ei:
+        s.run_claude("prompt", attempts=2)
+    assert len(calls) == 2
+    assert "boom: model overloaded" in str(ei.value)
+
+
+def test_run_claude_nonzero_exit_none_stderr_is_safe(monkeypatch):
+    # Phase 28 (VAL-02): stderr=None must not TypeError on the [:500] slice.
+    monkeypatch.setattr(s.config, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(s.time, "sleep", lambda *_a, **_k: None)
+    proc = types.SimpleNamespace(returncode=1, stdout="", stderr=None)
+    monkeypatch.setattr(s.subprocess, "run", lambda *a, **k: proc)
+    with pytest.raises(RuntimeError):           # no TypeError from None[:500]
+        s.run_claude("prompt", attempts=1)
+
+
+def test_run_claude_chatty_nonjson_stdout_raises_clear_runtimeerror(monkeypatch):
+    # Phase 28 (VAL-02): non-JSON stdout is no longer a raw json.JSONDecodeError —
+    # it is caught and re-raised as a clear RuntimeError (after retries).
+    monkeypatch.setattr(s.config, "require_tool", lambda *a, **k: None)
+    monkeypatch.setattr(s.time, "sleep", lambda *_a, **_k: None)
+    proc = types.SimpleNamespace(
+        returncode=0, stdout="Sure! Here are your clips, no JSON though.", stderr="")
+    monkeypatch.setattr(s.subprocess, "run", lambda *a, **k: proc)
+    with pytest.raises(RuntimeError) as ei:
+        s.run_claude("prompt", attempts=1)
+    assert "non-JSON output" in str(ei.value)
 
 
 def test_run_claude_wrapper_is_error_raises(monkeypatch):
@@ -175,6 +203,40 @@ def test_select_clips_multi_chunk_merges_dedups_and_writes(tmp_path, monkeypatch
 
     assert job.stage_status("select") == "done"
     assert job.load_manifest()["stages"]["select"]["clips"] == 2
+
+
+def test_select_clips_skips_failing_chunk_keeps_partial(tmp_path, monkeypatch):
+    # Phase 28 (VAL-02): one chunk's run_claude blowing up must NOT abort the whole
+    # stage — it is logged + skipped, and the surviving chunk's clips are kept.
+    transcript = {"segments": _SEGMENTS}
+    job = _make_job(tmp_path, transcript)
+    monkeypatch.setattr(s, "chunk_segments", lambda segs, *a, **k: [[0, 1, 2], [3, 4, 5]])
+
+    def fake_run_claude(prompt, *a, **k):
+        if "Segment zero" in prompt:            # first chunk fails hard
+            raise RuntimeError("claude -p failed after 3 attempt(s): boom")
+        return {"clips": [{"start_seg": 0, "end_seg": 2, "score": 8, "title": "C2"}]}
+
+    monkeypatch.setattr(s, "run_claude", fake_run_claude)
+
+    out = s.select_clips(job, max_clips=6)
+    payload = json.loads(out.read_text())
+    assert len(payload["clips"]) == 1           # only the surviving chunk's clip
+    assert payload["clips"][0]["title"] == "C2"
+    assert job.stage_status("select") == "done"
+
+
+def test_select_clips_all_chunks_fail_raises(tmp_path, monkeypatch):
+    # Phase 28 (VAL-02): if EVERY chunk fails and nothing is produced, raise a
+    # clear RuntimeError summarizing — don't silently write an empty clips.json.
+    transcript = {"segments": _SEGMENTS}
+    job = _make_job(tmp_path, transcript)
+    monkeypatch.setattr(s, "chunk_segments", lambda segs, *a, **k: [[0, 1, 2], [3, 4, 5]])
+    monkeypatch.setattr(s, "run_claude",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError) as ei:
+        s.select_clips(job, max_clips=6)
+    assert "chunk" in str(ei.value)
 
 
 def test_select_clips_cache_hit_skips_claude(tmp_path, monkeypatch):

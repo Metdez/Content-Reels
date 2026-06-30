@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 5
-  total_plans: 5
-  completed_plans: 5
-  percent: 36
+  completed_phases: 6
+  total_plans: 6
+  completed_plans: 6
+  percent: 43
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 28 of 36 — next up (Input Validation & Hardening); Phases 23–27 complete
+Phase: 29 of 36 — next up (Shared Crop-Math Module + Parity Test); Phases 23–28 complete. **Backend track (24–28) DONE.** Frontend track begins (29–32).
 Plan: —
-Status: Phase 27 (upload/state/lifecycle) shipped — sync /upload (threadpool, REL-03), manifest-backed error surfacing + lifespan shutdown (REL-04), global render semaphore (REL-05), bug #6 (ingest revert) FIXED; 186 tests pass; ruff clean. Running autonomously. Next P28 tackles VAL-01..06 incl. bugs #2/#3 (run_claude) + #7 (VAL-05 /media).
-Last activity: 2026-06-30 — Phase 27 complete (REL-03, REL-04, REL-05)
+Status: Phase 28 (validation & hardening) shipped — run_claude retry/backoff + per-chunk skip, trim/zoom bounds, uuid upload staging, friendly empty-transcript, MediaFiles allowlist (/media no longer leaks json), platform hints; bugs #2/#3/#4/#7 FIXED; 196 tests pass; ruff clean; coverage 92.4%. Running autonomously.
+Last activity: 2026-06-30 — Phase 28 complete (VAL-01…06)
 
 ### v6 progress
 
@@ -37,13 +37,13 @@ Last activity: 2026-06-30 — Phase 27 complete (REL-03, REL-04, REL-05)
 ### Bugs found in P24 (deferred to fix phases — DO NOT lose)
 
 1. ~~**REL (P26):** `rerender_one`/`render_job` non-atomic read-modify-write of `render.json`~~ — **FIXED in P26** (atomic_write_text + read_json + per-job locked upsert).
-2. **VAL-02 (P28):** `run_claude` leaks raw `JSONDecodeError` on chatty/non-JSON stdout (`select.py:130`).
-3. **VAL-02 (P28):** no retry — one bad/timed-out chunk aborts whole multi-chunk selection (`select.py:217`).
-4. **P28 minor:** `select.py:129` `proc.stderr[:500]` None-risk (latent).
+2. ~~**VAL-02 (P28):** `run_claude` leaks raw `JSONDecodeError`~~ — **FIXED in P28** (guarded parse → clear RuntimeError + retry).
+3. ~~**VAL-02 (P28):** no retry — one bad chunk aborts whole selection~~ — **FIXED in P28** (retry×3 + per-chunk skip).
+4. ~~**P28 minor:** `select.py` `proc.stderr[:500]` None-risk~~ — **FIXED in P28** (`(proc.stderr or "")`).
 5. **P30 note:** `stream_run` swallows `on_line` exceptions + raises `CalledProcessError` with no captured output (`logging_setup.py:123-124, 131`) — buggy progress parser/error detail invisible.
 6. ~~**P27:** `/upload` reverts `ingest` stage to `pending`~~ — **FIXED in P27** (save metadata first, then mark ingest done).
-7. **P28:** VAL-05 `/media` mount serves `job.json`/`transcript.json`/`audio.wav` verbatim (`app.py:64`).
-8. **P28 minor:** dead empty-filename 400 guard (Starlette returns 422 first) (`app.py:319-320`).
+7. ~~**P28:** VAL-05 `/media` serves `job.json`/`transcript.json` verbatim~~ — **FIXED in P28** (MediaFiles allowlist).
+8. **P28 minor (left, harmless):** dead empty-filename 400 guard (Starlette returns 422 first) (`app.py:319-320`) — documented, no-op, not worth changing.
 9. **Note (by design):** traversal name neutralized to basename (303), not rejected 400 (`app.py:42-49`).
 
 ### Verified live (v5.1, Windows 11, real NVENC + Playwright)

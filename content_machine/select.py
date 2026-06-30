@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import time
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -113,26 +114,56 @@ def extract_json_object(text: str) -> dict:
     raise ValueError("Unbalanced JSON in Claude output")
 
 
-def run_claude(prompt: str, timeout: int = 180) -> dict:
+def run_claude(prompt: str, timeout: int | None = None, attempts: int = 3) -> dict:
+    """Run `claude -p` and return the parsed selection JSON object.
+
+    Resilient (VAL-02 / bugs #2/#3/#4): the stdout parse is guarded (a raw
+    `JSONDecodeError` never leaks — chatty/non-JSON stdout becomes a clear
+    `RuntimeError`), `proc.stderr` is None-safe, and transient failures (timeout,
+    non-zero exit, non-JSON output) are retried with backoff up to `attempts`
+    times. `is_error` from the wrapper is a hard, non-retryable failure (e.g. a
+    usage limit). When the caller doesn't pin `timeout`, it scales with prompt
+    size so big transcripts get more headroom.
+    """
     config.require_tool(config.CLAUDE, "Install Claude Code and run `claude login`.")
-    import time
+    if timeout is None:
+        timeout = min(600, 120 + len(prompt) // 100)
     log.info("▶ claude -p selection (%d chars of transcript) — may take 20-60s", len(prompt))
-    t = time.time()
-    try:
-        proc = subprocess.run(build_claude_cmd(), input=prompt, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        log.error("✗ claude -p timed out after %ss", timeout)
-        raise
-    if proc.returncode != 0:
-        log.error("✗ claude -p failed (%s): %s", proc.returncode, (proc.stderr or "")[:500])
-        raise RuntimeError(f"claude -p failed ({proc.returncode}): {proc.stderr[:500]}")
-    wrapper = json.loads(proc.stdout)            # {type:result, result:"...", ...}
-    if wrapper.get("is_error"):
-        log.error("✗ claude -p returned error: %s", wrapper.get("result"))
-        raise RuntimeError(f"claude -p returned error: {wrapper.get('result')}")
-    log.info("✓ claude -p selection (%.1fs)", time.time() - t)
-    return extract_json_object(wrapper["result"])
+    last_err: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(1.5 ** attempt)
+            log.info("↻ claude -p retry %d/%d", attempt + 1, attempts)
+        t = time.time()
+        try:
+            proc = subprocess.run(build_claude_cmd(), input=prompt, capture_output=True,
+                                  text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            last_err = e
+            log.warning("claude -p timed out after %ss (attempt %d/%d)",
+                        timeout, attempt + 1, attempts)
+            continue
+        if proc.returncode != 0:
+            stderr = (proc.stderr or "")[:500]
+            last_err = RuntimeError(f"claude -p failed ({proc.returncode}): {stderr}")
+            log.warning("claude -p failed (%s) attempt %d/%d: %s",
+                        proc.returncode, attempt + 1, attempts, stderr)
+            continue
+        try:
+            wrapper = json.loads(proc.stdout)        # {type:result, result:"...", ...}
+        except json.JSONDecodeError:
+            head = (proc.stdout or "")[:200]
+            last_err = RuntimeError(f"claude -p returned non-JSON output: {head}")
+            log.warning("claude -p returned non-JSON output attempt %d/%d: %s",
+                        attempt + 1, attempts, head)
+            continue
+        if wrapper.get("is_error"):                  # hard failure — don't retry
+            log.error("✗ claude -p returned error: %s", wrapper.get("result"))
+            raise RuntimeError(f"claude -p returned error: {wrapper.get('result')}")
+        log.info("✓ claude -p selection (%.1fs)", time.time() - t)
+        return extract_json_object(wrapper["result"])
+    log.error("✗ claude -p failed after %d attempt(s): %s", attempts, last_err)
+    raise RuntimeError(f"claude -p failed after {attempts} attempt(s): {last_err}")
 
 
 # --- mapping + validation ----------------------------------------------------
@@ -212,14 +243,24 @@ def select_clips(job_id_or_job, max_clips: int = DEFAULT_MAX_CLIPS,
     chunks = chunk_segments(segments)
     log.info("select: %d segments in %d chunk(s)", len(segments), len(chunks))
     all_clips: list[Clip] = []
+    failures = 0
     for idxs in chunks:
         sub = [segments[i] for i in idxs]
-        raw = run_claude(build_selection_prompt(sub, max_clips))
+        try:
+            raw = run_claude(build_selection_prompt(sub, max_clips))
+        except Exception as e:  # VAL-02: skip a bad chunk, don't abort the stage
+            failures += 1
+            log.warning("select: chunk of %d segment(s) failed — skipping: %s", len(idxs), e)
+            continue
         # remap chunk-local indices in `raw` to global before mapping
         for c in raw.get("clips", []):
             c["start_seg"] = idxs[max(0, min(int(c.get("start_seg", 0)), len(idxs) - 1))]
             c["end_seg"] = idxs[max(0, min(int(c.get("end_seg", 0)), len(idxs) - 1))]
         all_clips.extend(clips_from_indices({"clips": raw.get("clips", [])}, segments))
+
+    if failures and not all_clips:  # every chunk failed and nothing was produced
+        raise RuntimeError(
+            f"select: all {len(chunks)} transcript chunk(s) failed claude -p selection")
 
     chosen = dedup_and_filter(all_clips, max_clips)
     log.info("select: %d candidate(s) -> %d clip(s) after dedup/filter",
