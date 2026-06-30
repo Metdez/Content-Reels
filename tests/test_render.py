@@ -34,6 +34,48 @@ def test_crop_scale_filter():
     assert "crop=" in f and "scale=1080:1920" in f
 
 
+# --- v3: zoom + vertical pan + per-aspect transforms -------------------------
+
+def test_compute_crop_zoom_shrinks_window_both_axes():
+    cw0, ch0, _, _ = r.compute_crop(1920, 1080, "9:16", 0.0)              # zoom 1.0
+    cw2, ch2, _, _ = r.compute_crop(1920, 1080, "9:16", 0.0, zoom=2.0)    # 2x tighter
+    assert cw2 < cw0 and ch2 < ch0
+    assert abs(cw2 - cw0 / 2) <= 2 and abs(ch2 - ch0 / 2) <= 2
+
+
+def test_compute_crop_y_offset_pans_when_zoomed():
+    _, _, _, y_top = r.compute_crop(1920, 1080, "9:16", 0.0, zoom=2.0, y_offset=-1.0)
+    _, _, _, y_mid = r.compute_crop(1920, 1080, "9:16", 0.0, zoom=2.0, y_offset=0.0)
+    _, ch, _, y_bot = r.compute_crop(1920, 1080, "9:16", 0.0, zoom=2.0, y_offset=1.0)
+    assert y_top < y_mid < y_bot
+    assert y_top == 0
+    assert y_bot == 1080 - ch
+
+
+def test_compute_crop_y_offset_is_noop_without_vertical_slack():
+    # 9:16 from 16:9 at zoom 1.0 is full-height — no vertical slack to pan
+    for yo in (-1.0, 0.0, 1.0):
+        assert r.compute_crop(1920, 1080, "9:16", 0.0, 1.0, yo)[3] == 0
+
+
+def test_normalize_transforms_backcompat_and_clamp():
+    tf = r.normalize_transforms(None, x_offset=0.5)
+    assert set(tf) == set(r.config.ASPECT_RATIOS)
+    assert tf["9:16"] == {"zoom": 1.0, "x": 0.5, "y": 0.0}     # legacy x_offset seeded
+    tf2 = r.normalize_transforms({"1:1": {"zoom": 1.8, "y": -0.3}})
+    assert tf2["1:1"]["zoom"] == 1.8 and tf2["1:1"]["y"] == -0.3
+    assert tf2["9:16"]["zoom"] == 1.0                           # untouched aspect = default
+    tf3 = r.normalize_transforms({"9:16": {"zoom": 0.5, "x": 5, "y": -9}})
+    assert tf3["9:16"] == {"zoom": 1.0, "x": 1.0, "y": -1.0}    # zoom>=1, x/y in [-1,1]
+
+
+def test_build_render_cmd_threads_zoom_and_y_into_crop():
+    cmd = r.build_render_cmd(Path("s.mp4"), 0.0, 5.0, "9:16", 0.0,
+                             Path("o.mp4"), 1920, 1080, zoom=2.0, y_offset=1.0)
+    vf = cmd[cmd.index("-vf") + 1]
+    assert "crop=304:540:808:540" in vf and "scale=1080:1920" in vf
+
+
 def test_render_cmd_no_captions_uses_vf_and_input_seek():
     cmd = r.build_render_cmd(Path("s.mp4"), 10.0, 25.0, "1:1", 0.0,
                              Path("o.mp4"), 1920, 1080, png_events=None)

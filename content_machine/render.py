@@ -29,6 +29,34 @@ log = get_logger(__name__)
 OUTPUT_DIMS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
 ASPECT_SLUG = {"9:16": "9x16", "1:1": "1x1", "16:9": "16x9"}
 
+# Per-aspect framing transform. zoom>=1 (1.0 = max-fit crop, larger = tighter);
+# x/y in [-1,1] pan across whatever horizontal/vertical slack the aspect+zoom create.
+DEFAULT_TRANSFORM = {"zoom": 1.0, "x": 0.0, "y": 0.0}
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def normalize_transforms(transforms: dict | None, x_offset: float = 0.0,
+                         aspects: tuple[str, ...] = config.ASPECT_RATIOS) -> dict:
+    """One clean {zoom,x,y} per aspect.
+
+    `transforms` is an optional aspect -> {zoom,x,y} mapping (partial is fine).
+    When an aspect is absent, it falls back to DEFAULT_TRANSFORM but with `x`
+    seeded from the legacy scalar `x_offset` so old callers/run_params that only
+    knew about a single horizontal offset keep working unchanged.
+    """
+    out = {}
+    for a in aspects:
+        t = (transforms or {}).get(a) or {}
+        out[a] = {
+            "zoom": max(1.0, float(t.get("zoom", DEFAULT_TRANSFORM["zoom"]))),
+            "x": _clamp(float(t.get("x", x_offset)), -1.0, 1.0),
+            "y": _clamp(float(t.get("y", DEFAULT_TRANSFORM["y"])), -1.0, 1.0),
+        }
+    return out
+
 
 def probe_dims(src: Path) -> tuple[int, int]:
     out = subprocess.run(
@@ -40,44 +68,56 @@ def probe_dims(src: Path) -> tuple[int, int]:
     return int(w), int(h)
 
 
-def compute_crop(src_w: int, src_h: int, aspect: str, x_offset: float = 0.0) -> tuple[int, int, int, int]:
-    """Largest target-aspect rect inside the source, center + horizontal offset.
+def compute_crop(src_w: int, src_h: int, aspect: str, x_offset: float = 0.0,
+                 zoom: float = 1.0, y_offset: float = 0.0) -> tuple[int, int, int, int]:
+    """Target-aspect crop rect inside the source: max-fit, then zoom + x/y pan.
 
-    Returns (crop_w, crop_h, x, y). x_offset in [-1,1] shifts the crop window
-    across the available horizontal slack (only meaningful when width-limited).
+    Returns (crop_w, crop_h, x, y).
+      - zoom>=1 shrinks the crop window (1.0 = largest fitting rect, 2.0 = half
+        as wide/tall = 2x tighter), which creates slack to pan in BOTH axes.
+      - x_offset / y_offset in [-1,1] move the window across that slack
+        (-1 = hard left/top, 0 = center, +1 = hard right/bottom).
+
+    Back-compatible: with the default zoom=1.0, y_offset=0.0 this matches the
+    original center-crop + horizontal-offset behavior exactly.
     """
     tw, th = (int(p) for p in aspect.split(":"))
     target_ar = tw / th
     src_ar = src_w / src_h
     if target_ar <= src_ar:                       # width-limited (e.g. 9:16 from 16:9)
-        crop_h = src_h
-        crop_w = round(src_h * target_ar)
-        slack = src_w - crop_w
-        x = round(slack / 2 + max(-1.0, min(1.0, x_offset)) * slack / 2)
-        x = max(0, min(slack, x))
-        y = 0
+        base_h = src_h
+        base_w = round(src_h * target_ar)
     else:                                          # height-limited
-        crop_w = src_w
-        crop_h = round(src_w / target_ar)
-        x = 0
-        y = max(0, (src_h - crop_h) // 2)
+        base_w = src_w
+        base_h = round(src_w / target_ar)
+    z = max(1.0, zoom)
+    crop_w = min(src_w, round(base_w / z))
+    crop_h = min(src_h, round(base_h / z))
+    slack_x = src_w - crop_w
+    slack_y = src_h - crop_h
+    x = round(slack_x / 2 + _clamp(x_offset, -1.0, 1.0) * slack_x / 2)
+    y = round(slack_y / 2 + _clamp(y_offset, -1.0, 1.0) * slack_y / 2)
+    x = int(max(0, min(slack_x, x)))
+    y = int(max(0, min(slack_y, y)))
     crop_w -= crop_w % 2                            # even dims for yuv420p
     crop_h -= crop_h % 2
     return crop_w, crop_h, x, y
 
 
-def crop_scale_filter(src_w: int, src_h: int, aspect: str, x_offset: float) -> str:
-    cw, ch, x, y = compute_crop(src_w, src_h, aspect, x_offset)
+def crop_scale_filter(src_w: int, src_h: int, aspect: str, x_offset: float = 0.0,
+                      zoom: float = 1.0, y_offset: float = 0.0) -> str:
+    cw, ch, x, y = compute_crop(src_w, src_h, aspect, x_offset, zoom, y_offset)
     ow, oh = OUTPUT_DIMS[aspect]
     return f"crop={cw}:{ch}:{x}:{y},scale={ow}:{oh}"
 
 
 def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset: float,
                      out: Path, src_w: int, src_h: int,
-                     png_events: list[dict] | None = None) -> list[str]:
+                     png_events: list[dict] | None = None,
+                     zoom: float = 1.0, y_offset: float = 0.0) -> list[str]:
     """ffmpeg: cut + crop/scale, optionally compositing time-gated caption PNGs."""
     dur = max(0.1, end - start)
-    cs = crop_scale_filter(src_w, src_h, aspect, x_offset)
+    cs = crop_scale_filter(src_w, src_h, aspect, x_offset, zoom, y_offset)
     cmd = [config.FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src)]
 
     png_events = png_events or []
@@ -122,21 +162,33 @@ def build_thumbnail_cmd(src: Path, t: float, out: Path) -> list[str]:
 
 def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                 aspects: tuple[str, ...] = config.ASPECT_RATIOS,
-                x_offset: float = 0.0, caption_mode: str = "overlay") -> dict:
+                x_offset: float = 0.0, caption_mode: str = "overlay",
+                transforms: dict | None = None,
+                on_aspect_done=None, prev_outputs: dict | None = None) -> dict:
+    """Render a clip in each aspect, each with its own {zoom,x,y} framing.
+
+    `transforms` is an aspect -> {zoom,x,y} mapping (falls back to x_offset for
+    any missing axis). `on_aspect_done(aspect, url_path)` is called as each
+    aspect finishes so the UI can surface clips incrementally. `prev_outputs`
+    seeds the returned outputs so a partial re-render (subset of `aspects`)
+    keeps the untouched aspects.
+    """
     config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
     src = next(job.data_dir.glob("source.*"))
     src_w, src_h = probe_dims(src)
+    tf = normalize_transforms(transforms, x_offset)
     clip_dir = job.clips_dir / f"clip{idx:02d}"
     clip_dir.mkdir(parents=True, exist_ok=True)
     events = captions.clip_caption_events(segments, clip["start"], clip["end"])
     log.info("render clip %d (%.1f-%.1fs, %d caption events) -> %s",
              idx, clip["start"], clip["end"], len(events), ", ".join(aspects))
 
-    outputs = {}
+    outputs = dict(prev_outputs or {})
     captions_used = caption_mode
     for aspect in aspects:
         ow, oh = OUTPUT_DIMS[aspect]
         out = clip_dir / f"{ASPECT_SLUG[aspect]}.mp4"
+        t = tf[aspect]
 
         # try hyperframes animated overlay first if requested
         if caption_mode == "hyperframes" and events and captions.hyperframes_available():
@@ -144,10 +196,13 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                 overlay = captions.render_hyperframes_overlay(
                     events, ow, oh, clip_dir / f"hf_{ASPECT_SLUG[aspect]}")
                 base = clip_dir / f"base_{ASPECT_SLUG[aspect]}.mp4"
-                run(build_render_cmd(src, clip["start"], clip["end"], aspect, x_offset,
-                    base, src_w, src_h, png_events=None), log, f"render base {aspect}")
+                run(build_render_cmd(src, clip["start"], clip["end"], aspect, t["x"],
+                    base, src_w, src_h, png_events=None, zoom=t["zoom"], y_offset=t["y"]),
+                    log, f"render base {aspect}")
                 run(build_overlay_cmd(base, overlay, out), log, f"composite hyperframes {aspect}")
                 outputs[aspect] = str(out)
+                if on_aspect_done:
+                    on_aspect_done(aspect, str(out))
                 continue
             except Exception as e:
                 log.warning("hyperframes %s failed (%s) — falling back to overlay captions",
@@ -160,31 +215,49 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
             font = captions.find_font()
             png_events = captions.render_caption_pngs(
                 events, ow, oh, clip_dir / f"pngs_{ASPECT_SLUG[aspect]}", font)
-        stream_run(build_render_cmd(src, clip["start"], clip["end"], aspect, x_offset,
-                   out, src_w, src_h, png_events=png_events), log,
-                   f"render clip {idx} {aspect}", cwd=str(clip_dir))
+        stream_run(build_render_cmd(src, clip["start"], clip["end"], aspect, t["x"],
+                   out, src_w, src_h, png_events=png_events, zoom=t["zoom"], y_offset=t["y"]),
+                   log, f"render clip {idx} {aspect}", cwd=str(clip_dir))
         outputs[aspect] = str(out)
+        if on_aspect_done:
+            on_aspect_done(aspect, str(out))
 
     thumb = clip_dir / "thumb.jpg"
     run(build_thumbnail_cmd(src, clip["start"] + 0.5, thumb), log, f"thumbnail clip {idx}")
     return {"index": idx, "dir": str(clip_dir), "outputs": outputs,
             "thumb": str(thumb), "captions": captions_used,
-            "title": clip.get("title", ""), "score": clip.get("score")}
+            "title": clip.get("title", ""), "score": clip.get("score"),
+            "transforms": tf}
 
 
 def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
-                 caption_mode: str = "overlay") -> dict:
-    """Re-render a single clip (e.g. after a crop-offset tweak from the UI)."""
+                 caption_mode: str = "overlay", transforms: dict | None = None,
+                 aspects: tuple[str, ...] | None = None) -> dict:
+    """Re-render a single clip after a UI tweak (framing / trim / captions).
+
+    `transforms` carries per-aspect {zoom,x,y}; `aspects` (optional) limits the
+    re-render to specific ratios so only the changed aspect re-encodes — the
+    untouched aspects are preserved from the existing render manifest.
+    """
     job = job_id_or_job if isinstance(job_id_or_job, Job) else Job.load(job_id_or_job)
     clips = json.loads(job.clips_json_path.read_text()).get("clips", [])
     segments = json.loads(job.transcript_path.read_text()).get("segments", [])
     if not 1 <= idx <= len(clips):
         raise IndexError(f"clip {idx} out of range (1..{len(clips)})")
-    result = render_clip(job, clips[idx - 1], idx, segments,
-                         config.ASPECT_RATIOS, x_offset, caption_mode)
-    # patch render.json for this clip so the library/UI reflect the re-render
+    target_aspects = tuple(aspects) if aspects else config.ASPECT_RATIOS
+
     manifest_path = job.clips_dir / "render.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"clips": []}
+    existing = next((c for c in manifest.get("clips", []) if c.get("index") == idx), None)
+    prev_outputs = dict(existing.get("outputs", {})) if existing else {}
+    # carry framing forward for aspects we're NOT re-rendering this time
+    merged_tf = dict((existing or {}).get("transforms", {}))
+    merged_tf.update(transforms or {})
+
+    result = render_clip(job, clips[idx - 1], idx, segments, target_aspects,
+                         x_offset, caption_mode, transforms=merged_tf,
+                         prev_outputs=prev_outputs)
+    # patch render.json for this clip so the library/UI reflect the re-render
     others = [c for c in manifest.get("clips", []) if c.get("index") != idx]
     manifest["clips"] = sorted(others + [result], key=lambda c: c["index"])
     manifest_path.write_text(json.dumps(manifest, indent=2))
@@ -192,7 +265,8 @@ def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
 
 
 def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
-               x_offset: float = 0.0, caption_mode: str = "overlay") -> Path:
+               x_offset: float = 0.0, caption_mode: str = "overlay",
+               transforms: dict | None = None, on_aspect_done=None) -> Path:
     job = job_id_or_job if isinstance(job_id_or_job, Job) else Job.load(job_id_or_job)
     clips_data = json.loads(job.clips_json_path.read_text())
     transcript = json.loads(job.transcript_path.read_text())
@@ -204,8 +278,11 @@ def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
     job.update_stage("render", "running")
     log.info("render: %d clip(s) x %d aspect(s), captions=%s",
              len(clips), len(aspects), caption_mode)
-    rendered = [render_clip(job, c, i + 1, segments, aspects, x_offset, caption_mode)
-                for i, c in enumerate(clips)]
+    rendered = []
+    for i, c in enumerate(clips):
+        cb = (lambda i_: (lambda a, p: on_aspect_done(i_ + 1, a, p)))(i) if on_aspect_done else None
+        rendered.append(render_clip(job, c, i + 1, segments, aspects, x_offset,
+                                    caption_mode, transforms=transforms, on_aspect_done=cb))
     log.info("render: done — %d clip(s)", len(rendered))
     manifest_path = job.clips_dir / "render.json"
     manifest_path.write_text(json.dumps({"clips": rendered}, indent=2))
