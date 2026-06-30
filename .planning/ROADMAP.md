@@ -504,7 +504,7 @@ Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISC
 - [x] **Phase 27: Reliability — Non-blocking Upload + State Persistence + Lifecycle** - sync upload (threadpool), manifest-backed error surfacing + lifespan shutdown, render semaphore (CM_MAX_RENDERS); bug #6 fixed; +4 tests, 186 pass ✓
 - [x] **Phase 28: Input Validation & Hardening** - trim/zoom bounds, run_claude retry/backoff + per-chunk skip, uuid upload staging, friendly empty-transcript, MediaFiles allowlist, platform hints; bugs #2/#3/#4/#7 fixed; 196 pass ✓
 - [x] **Phase 29: Shared Crop-Math Module + Parity Test** - static/crop.js (CMCrop), both templates use it + source_dims; 960-vector Node↔Python parity (CI node); fixed a real 1px banker's-rounding drift ✓
-- [ ] **Phase 30: Frontend Robustness — Error Surfacing + Polling** - surface failures, stop 404 loops, retry cap, replace `alert()`, keep dirty until POST ok, safe boot
+- [x] **Phase 30: Frontend Robustness — Error Surfacing + Polling** - connbar + retry-cap + 404-stop, alert()→inline, dirty-survives-failed-apply, safe editor boot + modal cleanup; Playwright-verified (FE-01..04) ✓
 - [ ] **Phase 31: Frontend Correctness — Captions, Audio, Validation** - real re-derive-for-trim, source scrub + audition, caption time validation, consistent cache-busting
 - [ ] **Phase 32: Accessibility Pass (WCAG 2.1 AA)** - real buttons, dialog focus-trap+ESC, labels+aria-live, touch targets, drop guard, CAP unification
 - [ ] **Phase 33: Adopt — Word-level Timing → Cut-snapping** - consume `words[]` for word-boundary snap in selection + editor trim

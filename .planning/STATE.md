@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 7
-  total_plans: 7
-  completed_plans: 7
-  percent: 50
+  completed_phases: 8
+  total_plans: 8
+  completed_plans: 8
+  percent: 57
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 30 of 36 — next up (Frontend Robustness: error surfacing + polling); Phases 23–29 complete (HALFWAY, 7/14).
+Phase: 31 of 36 — next up (Frontend Correctness: captions, audio, validation); Phases 23–30 complete (8/14).
 Plan: —
-Status: Phase 29 (shared crop math) shipped — content_machine/static/crop.js (CMCrop) + /static mount; job.html+editor.html use it with server source_dims; 960-vector Node↔Python parity test (CI node added); fixed a real 1px banker's-rounding drift (JS Math.round vs Python round). 197 tests pass; ruff clean; coverage 92.5%; Playwright-verified live (CMCrop loaded, box renders, 0 console errors). Dev server restarted on current code (logs/serve_v6.log). Running autonomously.
-Last activity: 2026-06-30 — Phase 29 complete (CROP-01, CROP-02)
+Status: Phase 30 (frontend robustness) shipped — connbar + retry-cap + 404-stop on polls, alert()→inline, editor dirty survives a failed Apply, safe editor boot + modal failure cleanup; templates-only; 197 tests pass; ruff clean; Playwright-verified 5 failure scenarios + happy path (0 console errors). Dev server on current code (logs/serve_v6.log, :8000). Running autonomously.
+Last activity: 2026-06-30 — Phase 30 complete (FE-01…04)
 
 ### v6 progress
 

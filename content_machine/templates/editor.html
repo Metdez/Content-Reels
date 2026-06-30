@@ -207,8 +207,11 @@ function updateFlowPill(){
   else if(lastFlow==='done') setPill('✓ Rendered','done');
   else setPill('Idle','idle');
 }
+const POLL_FAIL_CAP=5;   // stop polling the renderer after this many consecutive failures
+let renderFails=0;
 function pollRender(){
-  fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`).then(r=>r.json()).then(s=>{
+  fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`).then(r=>r.ok?r.json():Promise.reject(new Error('status '+r.status))).then(s=>{
+    renderFails=0;
     renderRStat(s);
     const busy=s.active||s.queued||s.status==='rendering'||s.status==='queued';
     if(busy){
@@ -225,9 +228,18 @@ function pollRender(){
       }
       updateFlowPill();
     }
-  }).catch(()=>{});
+  }).catch(()=>{          // bounded: show a lost-connection state, stop after the cap (never spin forever)
+    if(++renderFails>=POLL_FAIL_CAP){
+      clearInterval(rerenderTimer); rerenderTimer=null; rerenderActive=false; lastFlow='error';
+      setPill('⚠ Connection lost','error');
+      const st=document.getElementById('status'); if(st) st.textContent='⚠ Lost connection to renderer — retrying paused. Reload to check render status.';
+    } else {
+      setPill('⚠ Reconnecting…','dirty');
+      const st=document.getElementById('status'); if(st) st.textContent='⚠ Lost connection to renderer — retrying…';
+    }
+  });
 }
-function startPolling(){ if(!rerenderTimer){ rerenderActive=true; pollRender(); rerenderTimer=setInterval(pollRender,600); } }
+function startPolling(){ if(!rerenderTimer){ renderFails=0; rerenderActive=true; pollRender(); rerenderTimer=setInterval(pollRender,600); } }
 
 document.getElementById('back').addEventListener('click',()=>{ location.href=`/job/${JOB}`; });
 
@@ -410,7 +422,7 @@ function wire(){
   $('capson').addEventListener('change',()=>{ capsOn=$('capson').checked; dirtyClip=true; renderCaps(); markDirty(); });
   $('recap').addEventListener('click',async()=>{ // re-derive from transcript for current trim
     const r=await fetch(`/api/job/${JOB}/clip/${IDX}`); if(!r.ok)return; // base segments are clip-relative to ORIG; re-derive client-side not trivial
-    capsEdited=false; caps=JSON.parse(JSON.stringify(D.captions.segments)); renderCaps(); dirtyClip=true; markDirty(); });
+    capsEdited=false; caps=JSON.parse(JSON.stringify((D.captions&&D.captions.segments)||[])); renderCaps(); dirtyClip=true; markDirty(); });
 
   /* ---- audio ---- */
   $('mute').checked=audio.mute; $('vol').value=audio.volume; $('volv').textContent=Math.round(audio.volume*100)+'%';
@@ -431,40 +443,60 @@ function wire(){
       audio:audio, aspects:aspectsToRender };
     const queued = rerenderActive;
     rerenderActive = true;                       // committing to a render now
-    // Page stays interactive: clear the dirty markers (this edit is captured),
-    // so any further change re-arms Apply and simply queues the next render.
-    dirtyClip=false; dirtyAspects=new Set(); renderTabs(); markDirty();
+    // NB: dirty markers are kept until the POST confirms (see r.ok branch). A
+    // failed apply must leave the edit intact + Apply enabled so it's retryable
+    // without re-nudging a control.
     $('status').textContent = queued
       ? 'Queued — renders after the current one.'
       : 'Re-rendering in the background — you can keep editing.';
     setPill(queued?'⟳ Queued':'⟳ Rendering…','rendering');
     document.getElementById('rendercard').style.display='block';
+    const failApply=msg=>{ rerenderActive=false; lastFlow='error';
+      $('status').textContent='⚠ Could not start re-render: '+msg+' — your changes are kept, press Apply to retry.';
+      setPill('⚠ Failed to start','error'); };
     try{
       const r=await fetch(`/api/job/${JOB}/clip/${IDX}/edit`,
         {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(!r.ok){ rerenderActive=false; lastFlow='error'; $('status').textContent='Failed: '+(await r.text()); setPill('⚠ Failed to start','error'); return; }
+      if(!r.ok){ failApply(await r.text()); return; }
+      // Success: the edit is captured — clear dirty so any further change re-arms
+      // Apply and simply queues the next render. The page stays interactive.
+      dirtyClip=false; dirtyAspects=new Set(); renderTabs(); markDirty();
       startPolling();
-    }catch(e){ rerenderActive=false; lastFlow='error'; $('status').textContent='Error: '+e; setPill('⚠ Failed to start','error'); }
+    }catch(e){ failApply((e&&e.message)||e); }
   });
 
   renderTabs(); sync(); redraw(); renderBounds(); renderTrim(); renderCaps(); markDirty();
 }
 
+function bootError(msg){ const b=document.getElementById('bootmsg');
+  if(b){ b.textContent=msg; b.style.color='#ff7b72'; } }
 (async function(){
-  const r=await fetch(`/api/job/${JOB}/clip/${IDX}`);
-  if(!r.ok){ document.getElementById('bootmsg').textContent='Clip not found'; return; }
-  D=await r.json();
-  [sw,sh]=D.source_dims||[0,0]; dur=D.duration||0; BOUNDS=D.boundaries||[];
-  document.getElementById('title').textContent=`Edit clip ${IDX}${D.title?' · '+D.title:''}`;
-  document.getElementById('dims').textContent=sw?`${sw}×${sh}`:'';
-  // init transforms (ensure all aspects)
-  TF={}; ASPECTS.forEach(a=>{ const t=(D.transforms||{})[a]||{}; TF[a]={zoom:+t.zoom||1,x:+t.x||0,y:+t.y||0}; });
-  trimIn=D.start; trimOut=D.end;
-  winStart=Math.max(0,Math.min(D.orig_start,D.start)-30); winEnd=Math.min(dur||D.end+30,Math.max(D.orig_end,D.end)+30);
-  if(winEnd<=winStart) winEnd=winStart+Math.max(5,D.end-D.start+10);
-  caps=JSON.parse(JSON.stringify(D.captions.segments||[])); capsOn=D.captions.mode!=='none';
-  audio={mute:!!(D.audio&&D.audio.mute), volume:(D.audio&&D.audio.volume!=null)?D.audio.volume:1};
-  buildUI();
+  let r;
+  try{ r=await fetch(`/api/job/${JOB}/clip/${IDX}`); }
+  catch(e){ bootError('⚠ Could not load this clip — check your connection and reload.'); return; }
+  if(!r.ok){ bootError(r.status===404?'Clip not found':('⚠ Could not load this clip (error '+r.status+'). Reload to retry.')); return; }
+  try{
+    D=await r.json();
+    // Core payload must be usable; if not, surface a real error instead of throwing & hanging.
+    if(!D || typeof D!=='object' || D.start==null || D.end==null)
+      throw new Error('clip payload missing core fields');
+    [sw,sh]=D.source_dims||[0,0]; dur=D.duration||0; BOUNDS=D.boundaries||[];
+    document.getElementById('title').textContent=`Edit clip ${IDX}${D.title?' · '+D.title:''}`;
+    document.getElementById('dims').textContent=sw?`${sw}×${sh}`:'';
+    // init transforms (ensure all aspects) — D.transforms may be null/missing
+    TF={}; ASPECTS.forEach(a=>{ const t=(D.transforms||{})[a]||{}; TF[a]={zoom:+t.zoom||1,x:+t.x||0,y:+t.y||0}; });
+    trimIn=D.start; trimOut=D.end;
+    winStart=Math.max(0,Math.min(D.orig_start,D.start)-30); winEnd=Math.min(dur||D.end+30,Math.max(D.orig_end,D.end)+30);
+    if(winEnd<=winStart) winEnd=winStart+Math.max(5,D.end-D.start+10);
+    // captions/audio may be null/missing — default them safely
+    const capObj=D.captions||{};
+    caps=JSON.parse(JSON.stringify(capObj.segments||[])); capsOn=capObj.mode!=='none';
+    audio={mute:!!(D.audio&&D.audio.mute), volume:(D.audio&&D.audio.volume!=null)?D.audio.volume:1};
+    buildUI();
+  }catch(err){
+    bootError('⚠ This clip’s data could not be loaded — it may be incomplete or corrupted. Reload, or go back to clips.');
+    return;
+  }
   // If a re-render for this clip is already running (e.g. navigated back in), resume the live view.
   try{ const s=await (await fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`)).json();
     if(s.active||s.queued||s.status==='rendering'||s.status==='queued'){ renderRStat(s); startPolling(); } }catch(e){}

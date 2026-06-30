@@ -92,6 +92,13 @@
   .banner{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:14px 16px;color:var(--mut);font-size:14px}
   .banner.err{color:#ff7b72;border-color:rgba(248,81,73,.4)}
 
+  /* connection / fatal-state banner (fixed, works in both preview & progress views) */
+  .connbar{position:fixed;top:0;left:0;right:0;z-index:100;display:none;padding:11px 18px;text-align:center;
+    font-size:13.5px;font-weight:600;background:var(--panel2);color:var(--fg);border-bottom:1px solid var(--line);
+    box-shadow:0 4px 18px rgba(0,0,0,.35)}
+  .connbar.warn{background:rgba(210,153,34,.16);color:#e3b341;border-bottom-color:rgba(210,153,34,.5)}
+  .connbar.err{background:rgba(248,81,73,.16);color:#ff7b72;border-bottom-color:rgba(248,81,73,.5)}
+
   details.logs{margin:0 0 22px;background:#0c0f15;border:1px solid var(--line);border-radius:12px;overflow:hidden}
   details.logs summary{cursor:pointer;padding:12px 16px;color:var(--fg);user-select:none;font-weight:600;font-size:13.5px;
     display:flex;align-items:center;gap:8px;background:var(--panel2)}
@@ -134,6 +141,7 @@
 </style>
 </head>
 <body>
+<div class="connbar" id="connbar"></div>
 <header><a href="/">← Library</a><span class="src" id="src"></span></header>
 <main id="main">
   <div class="banner" id="boot">Loading…</div>
@@ -180,6 +188,8 @@
     <details class="logs" id="mlogwrap" open style="margin:12px 0 0">
       <summary>📜 Live log</summary><pre id="mlog">waiting for render output…</pre></details>
   </div>
+
+  <div class="banner err" id="merr" style="display:none;margin-top:14px"></div>
 
   <div style="display:flex;gap:10px;margin-top:18px">
     <button id="mgo">Re-render clip</button>
@@ -262,6 +272,7 @@ function buildPreview(d){
          <select id="ocaps"><option value="overlay">overlay (recommended)</option><option value="none">none</option><option value="hyperframes">hyperframes (beta)</option></select></div>
      </div>
      <button style="margin-top:18px;width:100%" id="runbtn">▶ Run — transcribe, pick clips &amp; render</button>
+     <div class="banner err" id="runerr" style="display:none;margin-top:12px"></div>
    </div>`;
   const box=document.getElementById('pbox'),tag=document.getElementById('ptag'),
         off=document.getElementById('poff'),val=document.getElementById('pval'),
@@ -295,14 +306,20 @@ function buildPreview(d){
     const t=TF[aspect]; ASPECTS.forEach(a=>{ TF[a]={zoom:t.zoom,x:t.x,y:t.y}; }); redraw(); });
   syncControls(); redraw();
   document.getElementById('runbtn').addEventListener('click',async ev=>{
-    const btn=ev.target; btn.disabled=true; btn.textContent='Starting…';
+    const btn=ev.target; const runerr=document.getElementById('runerr');
+    const failRun=msg=>{ btn.disabled=false; btn.textContent='▶ Run — transcribe, pick clips & render';
+      if(runerr){ runerr.style.display='block'; runerr.textContent='⚠ Could not start: '+msg; } };
+    if(runerr){ runerr.style.display='none'; runerr.textContent=''; }
+    btn.disabled=true; btn.textContent='Starting…';
     const fd=new FormData();
     fd.append('transforms',JSON.stringify(TF)); fd.append('x_offset',TF['9:16'].x);
     fd.append('max_clips',document.getElementById('omax').value);
     fd.append('model',document.getElementById('omodel').value); fd.append('captions',document.getElementById('ocaps').value);
-    const r=await fetch(`/api/job/${JOB}/run`,{method:'POST',body:fd});
+    let r;
+    try{ r=await fetch(`/api/job/${JOB}/run`,{method:'POST',body:fd}); }
+    catch(e){ failRun((e&&e.message)||e||'connection error'); return; }
     if(r.ok){ previewBuilt=false; m.innerHTML=''; startPolling(); }
-    else { btn.disabled=false; btn.textContent='▶ Run — transcribe, pick clips & render'; alert('Could not start: '+(await r.text())); }
+    else { failRun(await r.text()); }
   });
 }
 
@@ -429,6 +446,7 @@ async function openModal(idx){
   mvid.addEventListener('loadedmetadata',()=>{ try{ mvid.currentTime=Math.max(0,(c.start||0)+0.1); }catch(e){} mredraw(); },{once:true});
   $('mlead').textContent=`Clip ${idx}: "${c.title||''}" — set zoom & position per ratio, then re-render.`;
   $('mprog').style.display='none'; stopMPolls(); resetMProg();
+  $('merr').style.display='none'; $('merr').textContent='';
   $('mgo').disabled=false; $('mgo').textContent='Re-render clip';
   $('modal').classList.add('open'); msync(); mredraw();
 }
@@ -469,9 +487,11 @@ function refreshClipCard(idx,out){
   // 2.5s reconcile poll already leaves this card alone; clearing sig would make
   // it rebuild a fresh <video> with no cache-bust and undo the reload above.
 }
+let mRenderFails=0, mLogFails=0;
 function mPollRender(){
   if(!MCLIP) return;
-  fetch(`/api/job/${JOB}/clip/${MCLIP.index}/rerender-status`).then(r=>r.json()).then(s=>{
+  fetch(`/api/job/${JOB}/clip/${MCLIP.index}/rerender-status`).then(r=>r.ok?r.json():Promise.reject(new Error('status '+r.status))).then(s=>{
+    mRenderFails=0;
     mRenderStat(s);
     const busy=s.active||s.queued||s.status==='rendering'||s.status==='queued';
     if(!busy){
@@ -480,15 +500,23 @@ function mPollRender(){
       if(s.status!=='error') refreshClipCard(MCLIP.index, s.outputs||{});
       mPollLog();   // one final tail
     }
-  }).catch(()=>{});
+  }).catch(()=>{           // bounded: surface a lost-connection state, stop after the cap
+    if(++mRenderFails>=POLL_FAIL_CAP){ stopMPolls();
+      $('mproglbl').textContent='⚠ Lost connection to renderer — retrying paused. Reload to check status.';
+      $('mgo').disabled=false; $('mgo').textContent='Re-render again'; }
+    else $('mproglbl').textContent='⚠ Lost connection to renderer — retrying…';
+  });
 }
 function mPollLog(){
-  fetch(`/api/job/${JOB}/log`).then(r=>r.ok?r.json():null).then(d=>{ if(!d||!d.log)return;
+  fetch(`/api/job/${JOB}/log`).then(r=>r.ok?r.json():Promise.reject()).then(d=>{ mLogFails=0; if(!d||!d.log)return;
     const el=$('mlog'); const atB=el.scrollTop+el.clientHeight>=el.scrollHeight-24;
-    el.textContent=d.log; if(atB) el.scrollTop=el.scrollHeight; }).catch(()=>{});
+    el.textContent=d.log; if(atB) el.scrollTop=el.scrollHeight; })
+    .catch(()=>{ if(++mLogFails>=POLL_FAIL_CAP && mLogTimer){clearInterval(mLogTimer);mLogTimer=null;} });
 }
 function mGo(){
   if(!MCLIP) return;
+  $('merr').style.display='none'; $('merr').textContent='';
+  mRenderFails=0; mLogFails=0;
   $('mgo').disabled=true; $('mgo').textContent='Queued…';
   $('mprog').style.display='block'; resetMProg(); mRKey='';
   fetch(`/api/job/${JOB}/clip/${MCLIP.index}/edit`,{method:'POST',
@@ -497,7 +525,10 @@ function mGo(){
       $('mgo').textContent='Rendering…'; stopMPolls();
       mPollRender(); mRTimer=setInterval(mPollRender,600);
       mPollLog();    mLogTimer=setInterval(mPollLog,1000); })
-    .catch(e=>{ $('mproglbl').textContent='⚠ Could not start: '+(e.message||e); $('mgo').disabled=false; $('mgo').textContent='Re-render clip'; });
+    .catch(e=>{            // tear down the half-open progress UI, surface a clear inline error
+      stopMPolls(); $('mprog').style.display='none'; resetMProg();
+      const me=$('merr'); me.style.display='block'; me.textContent='⚠ Could not start re-render: '+((e&&e.message)||e);
+      $('mgo').disabled=false; $('mgo').textContent='Re-render clip'; });
 }
 /* wire the static modal controls once + drive the live output preview */
 ['mzoom','moff','moffy'].forEach(id=>$(id).addEventListener('input',mredraw));
@@ -529,14 +560,34 @@ startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],(
 })();
 
 /* ---------- polling ---------- */
+const POLL_FAIL_CAP=5;            // stop retrying after this many consecutive failures
+let pollFails=0, logFails=0;
+function connBanner(msg,cls){ const b=document.getElementById('connbar'); if(!b)return;
+  if(!msg){ b.style.display='none'; b.textContent=''; b.className='connbar'; return; }
+  b.style.display='block'; b.textContent=msg; b.className='connbar '+(cls||''); }
 async function pollLog(){
-  try{ const r=await fetch(`/api/job/${JOB}/log`); if(!r.ok)return; const d=await r.json();
+  if(logFails>=POLL_FAIL_CAP) return;        // bounded: don't spin forever on repeated failure
+  try{ const r=await fetch(`/api/job/${JOB}/log`); if(!r.ok){logFails++;return;} logFails=0; const d=await r.json();
     if(d.log){ const el=document.getElementById('log'); if(!el)return;
       const atBottom=el.scrollTop+el.clientHeight>=el.scrollHeight-24; el.textContent=d.log;
-      if(atBottom) el.scrollTop=el.scrollHeight; } }catch(e){}
+      if(atBottom) el.scrollTop=el.scrollHeight; } }catch(e){ logFails++; }
 }
 async function poll(){
-  const r=await fetch(`/api/job/${JOB}`); if(!r.ok)return; const d=await r.json(); DATA=d;
+  let r;
+  try{ r=await fetch(`/api/job/${JOB}`); }
+  catch(e){            // network/thrown error — transient retry banner, pause after the cap
+    if(++pollFails>=POLL_FAIL_CAP){ stop(); connBanner('⚠ Connection lost — retrying paused. Reload to retry.','err'); }
+    else connBanner('⚠ Connection lost — retrying…','warn');
+    return;
+  }
+  if(!r.ok){
+    if(r.status===404){ stop(); connBanner('This job no longer exists.','err'); return; }
+    if(++pollFails>=POLL_FAIL_CAP){ stop(); connBanner('⚠ Connection lost — retrying paused. Reload to retry.','err'); }
+    else connBanner('⚠ Connection lost — retrying…','warn');
+    return;
+  }
+  pollFails=0; connBanner(null);              // success clears the failure state
+  const d=await r.json(); DATA=d;
   document.getElementById('src').textContent=d.source_name||JOB;
   if(d.awaiting_run){ if(!previewBuilt) buildPreview(d); return; }
   progressShell(); pollLog();
