@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
-  percent: 29
+  completed_phases: 5
+  total_plans: 5
+  completed_plans: 5
+  percent: 36
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 27 of 36 — next up (Non-blocking upload + state persistence + lifecycle); Phases 23–26 complete
+Phase: 28 of 36 — next up (Input Validation & Hardening); Phases 23–27 complete
 Plan: —
-Status: Phase 26 (atomic manifests + locking) shipped — atomic_write_text + read_json (Windows replace-retry + tolerant reads) + per-job locked upsert-by-index; bug #1 (render.json non-atomic RMW) FIXED; 182 tests pass; ruff clean; coverage 91.6%. Running autonomously.
-Last activity: 2026-06-30 — Phase 26 complete (REL-01, REL-02)
+Status: Phase 27 (upload/state/lifecycle) shipped — sync /upload (threadpool, REL-03), manifest-backed error surfacing + lifespan shutdown (REL-04), global render semaphore (REL-05), bug #6 (ingest revert) FIXED; 186 tests pass; ruff clean. Running autonomously. Next P28 tackles VAL-01..06 incl. bugs #2/#3 (run_claude) + #7 (VAL-05 /media).
+Last activity: 2026-06-30 — Phase 27 complete (REL-03, REL-04, REL-05)
 
 ### v6 progress
 
@@ -41,7 +41,7 @@ Last activity: 2026-06-30 — Phase 26 complete (REL-01, REL-02)
 3. **VAL-02 (P28):** no retry — one bad/timed-out chunk aborts whole multi-chunk selection (`select.py:217`).
 4. **P28 minor:** `select.py:129` `proc.stderr[:500]` None-risk (latent).
 5. **P30 note:** `stream_run` swallows `on_line` exceptions + raises `CalledProcessError` with no captured output (`logging_setup.py:123-124, 131`) — buggy progress parser/error detail invisible.
-6. **P27:** `/upload` reverts `ingest` stage to `pending` — `update_stage("ingest","done")` then a trailing `save_manifest(stale_manifest)` clobbers it (`app.py:349-355`).
+6. ~~**P27:** `/upload` reverts `ingest` stage to `pending`~~ — **FIXED in P27** (save metadata first, then mark ingest done).
 7. **P28:** VAL-05 `/media` mount serves `job.json`/`transcript.json`/`audio.wav` verbatim (`app.py:64`).
 8. **P28 minor:** dead empty-filename 400 guard (Starlette returns 422 first) (`app.py:319-320`).
 9. **Note (by design):** traversal name neutralized to basename (303), not rejected 400 (`app.py:42-49`).

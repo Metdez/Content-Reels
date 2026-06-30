@@ -38,11 +38,10 @@ def test_upload_valid_video_redirects_and_stages_job(client, monkeypatch):
     assert manifest["source_ext"] == ".mp4"
     assert manifest["source_dims"] == [1920, 1080]
     assert (job_dir / "source.mp4").exists()
-    # BUG (app.py:349-355): upload calls job.update_stage("ingest", "done", ...)
-    # which writes ingest=done to disk, but the trailing job.save_manifest(manifest)
-    # re-persists the stale in-memory manifest (loaded BEFORE the stage update), so
-    # the ingest stage is silently reverted to "pending". Characterised here.
-    assert manifest["stages"]["ingest"]["status"] == "pending"
+    # Phase 27 fix (bug #6): /upload now persists metadata first, then marks ingest
+    # done — so the ingest stage is correctly "done" on disk (was reverted to
+    # "pending" by a stale trailing save_manifest before the fix).
+    assert manifest["stages"]["ingest"]["status"] == "done"
 
 
 def test_upload_no_filename_rejected(client, monkeypatch):

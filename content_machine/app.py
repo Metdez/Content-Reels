@@ -10,9 +10,11 @@ glob is the index; the architecture research endorsed this).
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import threading
 import traceback
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
@@ -60,11 +62,34 @@ _env = Environment(
 def render_template(name: str, **ctx) -> HTMLResponse:
     return HTMLResponse(_env.get_template(name).render(**ctx))
 
-app = FastAPI(title="Content Machine")
+@asynccontextmanager
+async def _lifespan(_app):
+    """Graceful shutdown (REL-04): on stop, signal background pipeline/re-render
+    workers to stop draining. They're daemons so the process still exits promptly;
+    in-flight ffmpeg children are terminated by process exit."""
+    yield
+    _SHUTTING_DOWN.set()
+    log.info("shutdown: signalled background workers to stop")
+
+
+app = FastAPI(title="Content Machine", lifespan=_lifespan)
 app.mount("/media", StaticFiles(directory=str(config.DATA_DIR)), name="media")
 
 # job_id -> {"error": str|None} for surfacing background failures
 RUNNING: dict[str, dict] = {}
+
+# REL-05: a global render-slot semaphore bounds concurrent encodes so multiple
+# simultaneous jobs (or a job render racing a clip re-render) can't exhaust a
+# consumer GPU's 2–3 NVENC session limit. Default 1 (fully serial) is the safest
+# "must not break" choice on a single GPU; override with CM_MAX_RENDERS.
+try:
+    _MAX_RENDERS = max(1, int(os.environ.get("CM_MAX_RENDERS", "1")))
+except ValueError:
+    _MAX_RENDERS = 1
+_RENDER_SLOTS = threading.Semaphore(_MAX_RENDERS)
+
+# Flipped by the lifespan shutdown so background workers can stop cleanly (REL-04).
+_SHUTTING_DOWN = threading.Event()
 
 
 def media_url(path: str | Path) -> str:
@@ -99,6 +124,8 @@ def _rerender_payload(result: dict) -> dict:
 def _rerender_worker(job_id: str, idx: int) -> None:
     key = (job_id, idx)
     while True:
+        if _SHUTTING_DOWN.is_set():  # REL-04: stop draining on shutdown
+            return
         with _RERENDER_LOCK:
             tr = _RERENDER.get(key)
             req = tr.get("pending") if tr else None
@@ -127,9 +154,10 @@ def _rerender_worker(job_id: str, idx: int) -> None:
                         break
 
         try:
-            result = render.rerender_one(
-                job_id, idx, edit=req.get("edit"),
-                aspects=req_aspects or None, on_aspect_done=cb)
+            with _RENDER_SLOTS:  # REL-05: share the global render-slot cap
+                result = render.rerender_one(
+                    job_id, idx, edit=req.get("edit"),
+                    aspects=req_aspects or None, on_aspect_done=cb)
             with _RERENDER_LOCK:
                 payload = _rerender_payload(result)
                 tr["result"] = payload
@@ -192,8 +220,9 @@ def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                 RUNNING[job.job_id]["error"] = msg
                 job.update_stage("render", "error", error=msg)
                 return
-            render.render_job(job, x_offset=x_offset, caption_mode=captions_mode,
-                              transforms=transforms)
+            with _RENDER_SLOTS:  # REL-05: bound concurrent GPU encodes
+                render.render_job(job, x_offset=x_offset, caption_mode=captions_mode,
+                                  transforms=transforms)
             log.info("=== pipeline complete: %s ===", job.job_id)
         except Exception as e:  # surface failure on whichever stage was running
             RUNNING[job.job_id]["error"] = str(e)
@@ -291,6 +320,13 @@ def _job_payload(job: Job) -> dict:
             c["start"] = sc.get("start", 0)
             c["end"] = sc.get("end", 0)
     source = next(job.data_dir.glob("source.*"), None)
+    # Surface the failure message from the in-memory RUNNING tracker if present,
+    # else fall back to whichever stage recorded an error on disk — so an in-flight
+    # failure still shows after a server restart (REL-04), not just this process.
+    err = RUNNING.get(job.job_id, {}).get("error")
+    if not err:
+        err = next((st.get("error") for st in stages.values()
+                    if st.get("status") == "error" and st.get("error")), None)
     return {"job_id": job.job_id, "source_name": m.get("source_name", ""),
             "stages": stages, "clips": clips,
             "progress": _master_progress(stages),
@@ -298,7 +334,7 @@ def _job_payload(job: Job) -> dict:
             "source_url": media_url(source) if source else None,
             "source_dims": m.get("source_dims", [0, 0]),
             "run_params": m.get("run_params", {}),
-            "error": RUNNING.get(job.job_id, {}).get("error")}
+            "error": err}
 
 
 # --- routes ------------------------------------------------------------------
@@ -308,13 +344,18 @@ def index():
 
 
 @app.post("/upload")
-async def upload(video: UploadFile = File(...)):
+def upload(video: UploadFile = File(...)):
     """Stage the upload for preview — does NOT start the pipeline.
 
     The source is moved into data/<job_id>/source<ext> (previewable via /media),
     its dimensions are probed for the crop overlay, and the manifest is marked
     `awaiting_run`. The user picks the crop + run options on the job page, then
     POSTs /api/job/{id}/run to actually start transcribe→select→render.
+
+    Defined `def` (not `async def`) on purpose (REL-03): the body does synchronous,
+    potentially multi-second work — streaming the upload to disk and SHA-256ing the
+    whole file for the content id. A sync endpoint runs in Starlette's threadpool, so
+    a large upload no longer blocks the event loop (and every in-flight progress poll).
     """
     if not video.filename:
         raise HTTPException(400, "No file")
@@ -351,8 +392,11 @@ async def upload(video: UploadFile = File(...)):
     manifest["source_ext"] = ext
     manifest["source_dims"] = [w, h]
     manifest["content_id"] = content_id  # source identity, for reference/grouping
-    job.update_stage("ingest", "done", source=str(src))  # source already on disk
+    # Persist the metadata FIRST, then mark ingest done. The previous order
+    # (update_stage then save_manifest of the stale in-memory dict) clobbered
+    # ingest back to "pending" on disk (bug #6 / Phase 25 finding).
     job.save_manifest(manifest)
+    job.update_stage("ingest", "done", source=str(src))  # source already on disk
     return RedirectResponse(f"/job/{job_id}", status_code=303)
 
 
