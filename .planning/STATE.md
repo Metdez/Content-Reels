@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v6
 milestone_name: Full Quality Pass — Test, Harden, Improve, Adopt
-status: planning
+status: complete
 last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 13
-  total_plans: 13
-  completed_plans: 13
-  percent: 93
+  completed_phases: 14
+  total_plans: 14
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 36 of 36 — FINAL (Final Integration Verification & Docs); Phases 23–35 complete (13/14).
+Phase: 36 of 36 COMPLETE — **MILESTONE v6 COMPLETE (14/14)**.
 Plan: —
-Status: Phase 35 (E2E suite) shipped — pytest-playwright self-contained harness + 34 deterministic UI specs + real-ffmpeg render spec; CI e2e job (apt ffmpeg + chromium). Fixed 2 test-infra bugs (harness pipe-deadlock that hung renders; conftest import collision). Default unit suite 211 pass; e2e UI 34 pass; slow real-render passes isolated (16s); ruff clean. Running autonomously.
-Last activity: 2026-06-30 — Phase 35 complete (E2E-01…06)
+Status: Phase 36 (final verification & docs) shipped — README v6 update; "better" criteria + the karaoke perf tradeoff documented; self-audit clean (41/41 requirements mapped+delivered, 14/14 phases with PLAN+SUMMARY). Final gates: unit 211 pass (~92.4% cov, from 64.2%), e2e UI 34 pass, crop parity pass, ruff clean. All 8 discovery bugs + 1px crop drift fixed. No known broken functionality.
+Last activity: 2026-06-30 — Phase 36 complete (DONE-01); milestone v6 complete
 
 ### v6 progress
 

@@ -10,7 +10,7 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 
 ## Current Milestone: v6 — Full Quality Pass: Test, Harden, Improve, Adopt
 
-**Status:** Planning → executing autonomously (started 2026-06-30). Phases 23–36.
+**Status:** ✅ Complete (2026-06-30). Phases 23–36 all shipped. Unit 211 pass (~92% cov, from 64%), 34 Playwright E2E specs, crop-parity, ruff + CI; all 8 discovery bugs + a 1px crop drift fixed; word-snapping + karaoke captions adopted; WCAG 2.1 AA. No known broken functionality.
 
 **Goal:** Take full ownership of the codebase as a senior engineer: build exhaustive automated + Playwright coverage, fix every defect surfaced, improve against an explicit "better" standard, and adopt the worthwhile features from the referenced repos — so the whole app works end to end with no known broken functionality.
 

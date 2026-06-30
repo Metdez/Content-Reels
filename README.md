@@ -118,12 +118,19 @@ data/              your videos, transcripts, clips (gitignored, local-only)
   to an API key later, the selection call is isolated in `select.run_claude`.
 - **This Mac's Homebrew ffmpeg is a stripped build** (no libass/drawtext) — so captions
   are rendered as PNG overlays, not burned text. Works with any ffmpeg.
-- **hyperframes captions** are wired (`--captions hyperframes`) but need a properly
-  scaffolded composition to fully animate; the default overlay captions are the reliable path.
+- **Word-level karaoke captions** ship as the `karaoke` caption mode (word-by-word
+  highlight driven by whisper's per-word timings) via the PNG-overlay pipeline — works
+  with any ffmpeg. The richer **hyperframes** animated path is wired + gated behind the
+  same mode but needs Node ≥22 + a headless Chrome; on any machine without them (or any
+  failure) it falls back automatically to PNG-karaoke. Note: PNG-karaoke composites one
+  overlay per word, so it's slower to encode on long/wordy clips — it's opt-in; the default
+  `overlay` (per-phrase) captions are fast.
 - **Reframe** is a manual per-aspect transform — independent zoom + x/y pan for
-  each ratio, set live before the run and per clip in the editor (no CV needed).
-  Speaker-tracking auto-reframe and word-level karaoke captions are still deferred
-  (see `.planning/REQUIREMENTS.md`).
+  each ratio, set live before the run and per clip in the editor (no CV needed). The editor
+  trim snaps to **word boundaries** from whisper's word timings. Speaker-tracking
+  auto-reframe is still deferred (needs CV; see `.planning/REQUIREMENTS.md`).
+- **`DeepAgentLLMtxt.md`** (referenced from CLAUDE.md) is currently empty (0 bytes) — left
+  in place; nothing actionable until content is added.
 
 ## Logs
 
@@ -142,7 +149,17 @@ tail -f logs/jobs/<job_id>.log          # follow one job
 ## Tests
 
 ```bash
-make test        # or ./.venv/bin/pytest -q
+make test                              # unit + HTTP (pytest, with coverage)
+make lint                              # ruff
+pytest -m "e2e and not slow"           # Playwright UI E2E (needs: pip install pytest-playwright; playwright install chromium)
+make e2e-seed                          # seed a real fixture job for manual/Playwright QA
 ```
 
-Built with GSD. See `.planning/` for the roadmap, research, and per-phase plans/summaries.
+- **~211 unit/HTTP tests** (pytest, ~92% line coverage) + **34 Playwright UI E2E specs** +
+  a JS↔Python crop-math parity test (Node) + a real-ffmpeg render E2E.
+- CI (`.github/workflows/test.yml`) runs ruff + the unit suite, and a separate job for the
+  Playwright E2E suite.
+
+Built with GSD. See `.planning/` for the roadmap, research, and per-phase plans/summaries
+(milestone **v6 — Full Quality Pass** hardened reliability, added the test suites + CI,
+the accessibility pass, word-snapping, and karaoke captions).

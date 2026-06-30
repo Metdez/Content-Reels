@@ -510,7 +510,7 @@ Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISC
 - [x] **Phase 33: Adopt — Word-level Timing → Cut-snapping** - editor trim boundaries now include whisper words[] (137 vs ~18 pts) with segment fallback; +2 tests; live-verified ✓
 - [x] **Phase 34: Adopt — Word-level Karaoke Captions** - karaoke mode via PNG word-highlight (driven by words[]); hyperframes gated (Node<22/no-Chrome here) w/ PNG fallback proven; live ffprobe-validated (h264 1080x1920, 40 word PNGs); 211 pass ✓
 - [x] **Phase 35: Exhaustive Playwright E2E Suite** - pytest-playwright harness + 34 UI specs (index/preview/progress/quickcrop/editor/edge) + real-ffmpeg render spec; CI e2e job; fixed 2 test-infra bugs (pipe deadlock, conftest collision) ✓
-- [ ] **Phase 36: Final Integration Verification & Docs** - full real run, README/BENCHMARKS, document criteria, milestone audit
+- [x] **Phase 36: Final Integration Verification & Docs** - README v6 update, criteria + tradeoff documented, self-audit clean (41/41 reqs, 14/14 phases); unit 211 + e2e 34 green ✓ — **v6 COMPLETE**
 
 ### Phase 23: Test Harness & CI Foundation
 **Goal**: Stand up the testing foundation everything else depends on: coverage measurement, an HTTP-layer test client, a headless Playwright harness that drives the app against a pre-seeded job fixture (so E2E never waits on a 5-minute render), a lint gate, and CI.
