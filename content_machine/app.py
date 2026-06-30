@@ -110,8 +110,19 @@ _SHUTTING_DOWN = threading.Event()
 
 
 def media_url(path: str | Path) -> str:
-    rel = Path(path).resolve().relative_to(config.DATA_DIR.resolve())
-    return f"/media/{rel.as_posix()}"
+    """Stable /media URL for a data-dir file, cache-busted by the file's mtime.
+
+    FE-08: appending ``?v=<int mtime>`` makes the URL change whenever the file
+    content changes, so reconcile-rebuilt clip cards and editor previews bust
+    automatically (no manual ``?t=`` needed). A missing/unstatable file omits the
+    query rather than failing — the bare /media path still works."""
+    p = Path(path)
+    rel = p.resolve().relative_to(config.DATA_DIR.resolve())
+    url = f"/media/{rel.as_posix()}"
+    try:
+        return f"{url}?v={int(p.stat().st_mtime)}"
+    except OSError:
+        return url
 
 
 # --- background clip re-render (non-blocking + queued, per clip) --------------
@@ -571,6 +582,25 @@ def api_clip_editor(job_id: str, idx: int):
     if not (config.DATA_DIR / job_id / "job.json").exists():
         raise HTTPException(404, "Job not found")
     return JSONResponse(_clip_editor_payload(Job.load(job_id), idx))
+
+
+@app.get("/api/job/{job_id}/clip/{idx}/captions")
+def api_clip_captions(job_id: str, idx: int, start: float, end: float):
+    """FE-05: re-derive caption events for a clip from the transcript, scoped to an
+    arbitrary [start, end] source-time window. The editor calls this with the CURRENT
+    trim so "Re-derive from transcript" reflects a changed trim window. Same call
+    ``_clip_editor_payload`` uses, just with caller-supplied bounds."""
+    if not (config.DATA_DIR / job_id / "job.json").exists():
+        raise HTTPException(404, "Job not found")
+    job = Job.load(job_id)
+    clips = json.loads(job.clips_json_path.read_text()).get("clips", []) \
+        if job.clips_json_path.exists() else []
+    if not 1 <= idx <= len(clips):
+        raise HTTPException(404, "Clip not found")
+    transcript = json.loads(job.transcript_path.read_text()) \
+        if job.transcript_path.exists() else {"segments": []}
+    segs = transcript.get("segments", [])
+    return JSONResponse({"segments": captions.clip_caption_events(segs, start, end)})
 
 
 @app.post("/api/job/{job_id}/clip/{idx}/edit")

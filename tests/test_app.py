@@ -40,7 +40,10 @@ def test_media_url_is_relative_to_data_dir(monkeypatch, tmp_path):
     p = tmp_path / "job1" / "clips" / "clip01" / "9x16.mp4"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(b"x")
-    assert app.media_url(p) == "/media/job1/clips/clip01/9x16.mp4"
+    url = app.media_url(p)
+    # FE-08: media_url now cache-busts with ?v=<int mtime>; the path part is unchanged.
+    assert url.split("?")[0] == "/media/job1/clips/clip01/9x16.mp4"
+    assert "?v=" in url
 
 
 def test_safe_upload_name_blocks_traversal_and_bad_ext(monkeypatch, tmp_path):

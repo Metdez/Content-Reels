@@ -156,6 +156,41 @@ def test_api_clip_editor_payload(seeded_job):
     assert "transforms" in body and "captions" in body
 
 
+# --- FE-05: re-derive captions endpoint --------------------------------------
+def test_api_clip_captions_returns_window_segments(seeded_job):
+    """FE-05: re-derive caption events for an arbitrary [start,end] source window."""
+    client, job_id, _ = seeded_job
+    resp = client.get(f"/api/job/{job_id}/clip/1/captions", params={"start": 0, "end": 100})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "segments" in body and isinstance(body["segments"], list)
+    assert body["segments"], "a 0–100s window should overlap the seeded transcript"
+    seg = body["segments"][0]
+    assert {"start", "end", "text"} <= set(seg)
+    assert seg["start"] >= 0  # clip-relative (re-timed to the window start)
+
+
+def test_api_clip_captions_unknown_job_404(client):
+    resp = client.get("/api/job/nope/clip/1/captions", params={"start": 0, "end": 5})
+    assert resp.status_code == 404
+
+
+def test_api_clip_captions_out_of_range_idx_404(seeded_job):
+    client, job_id, _ = seeded_job
+    resp = client.get(f"/api/job/{job_id}/clip/99/captions", params={"start": 0, "end": 5})
+    assert resp.status_code == 404
+
+
+# --- FE-08: media URLs carry a cache-busting ?v= -----------------------------
+def test_api_job_outputs_carry_cache_bust(seeded_job):
+    """FE-08: every output media URL now carries ?v=<int mtime> so rebuilt files bust."""
+    client, job_id, _ = seeded_job
+    body = client.get(f"/api/job/{job_id}").json()
+    for clip in body["clips"]:
+        for url in clip["outputs"].values():
+            assert url.startswith("/media/") and "?v=" in url
+
+
 def test_api_job_unknown_404(client):
     assert client.get("/api/job/nope/").status_code in (404, 307, 308)
     assert client.get("/api/job/nope").status_code == 404

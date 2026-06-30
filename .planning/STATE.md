@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 8
-  total_plans: 8
-  completed_plans: 8
-  percent: 57
+  completed_phases: 9
+  total_plans: 9
+  completed_plans: 9
+  percent: 64
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 31 of 36 — next up (Frontend Correctness: captions, audio, validation); Phases 23–30 complete (8/14).
+Phase: 32 of 36 — next up (Accessibility Pass, WCAG 2.1 AA); Phases 23–31 complete (9/14).
 Plan: —
-Status: Phase 30 (frontend robustness) shipped — connbar + retry-cap + 404-stop on polls, alert()→inline, editor dirty survives a failed Apply, safe editor boot + modal failure cleanup; templates-only; 197 tests pass; ruff clean; Playwright-verified 5 failure scenarios + happy path (0 console errors). Dev server on current code (logs/serve_v6.log, :8000). Running autonomously.
-Last activity: 2026-06-30 — Phase 30 complete (FE-01…04)
+Status: Phase 31 (frontend correctness) shipped — /captions re-derive endpoint (real, trim-scoped), editor source <video controls>, caption time validation that blocks Apply, media_url ?v=mtime cache-bust; 201 tests pass; ruff clean; coverage 92.6%; live-verified (/captions, ?v=, controls, validation, 0 console errors). Dev server on current code (logs/serve_v6.log, :8000). Running autonomously.
+Last activity: 2026-06-30 — Phase 31 complete (FE-05…08)
 
 ### v6 progress
 

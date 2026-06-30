@@ -505,7 +505,7 @@ Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISC
 - [x] **Phase 28: Input Validation & Hardening** - trim/zoom bounds, run_claude retry/backoff + per-chunk skip, uuid upload staging, friendly empty-transcript, MediaFiles allowlist, platform hints; bugs #2/#3/#4/#7 fixed; 196 pass ✓
 - [x] **Phase 29: Shared Crop-Math Module + Parity Test** - static/crop.js (CMCrop), both templates use it + source_dims; 960-vector Node↔Python parity (CI node); fixed a real 1px banker's-rounding drift ✓
 - [x] **Phase 30: Frontend Robustness — Error Surfacing + Polling** - connbar + retry-cap + 404-stop, alert()→inline, dirty-survives-failed-apply, safe editor boot + modal cleanup; Playwright-verified (FE-01..04) ✓
-- [ ] **Phase 31: Frontend Correctness — Captions, Audio, Validation** - real re-derive-for-trim, source scrub + audition, caption time validation, consistent cache-busting
+- [x] **Phase 31: Frontend Correctness — Captions, Audio, Validation** - /captions re-derive endpoint (real), source <video controls>, caption time validation+block, media_url ?v=mtime; 201 pass; live-verified ✓
 - [ ] **Phase 32: Accessibility Pass (WCAG 2.1 AA)** - real buttons, dialog focus-trap+ESC, labels+aria-live, touch targets, drop guard, CAP unification
 - [ ] **Phase 33: Adopt — Word-level Timing → Cut-snapping** - consume `words[]` for word-boundary snap in selection + editor trim
 - [ ] **Phase 34: Adopt — Word-level Karaoke Captions (hyperframes)** - finish hyperframes path with word-highlight; PNG fallback intact

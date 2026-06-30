@@ -77,6 +77,8 @@
   .caprow{display:grid;grid-template-columns:58px 58px 1fr;gap:7px;align-items:center}
   .caprow input{background:#0c111a;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:6px 8px;font-size:13px;width:100%}
   .caprow .t{font:11px ui-monospace,Menlo,monospace}
+  .caprow input.bad{border-color:var(--err);background:rgba(248,81,73,.08)}
+  .caperr{grid-column:1/-1;display:none;font-size:11.5px;color:var(--err);margin:1px 0 2px}
   .toggle{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--fg);cursor:pointer;user-select:none}
   .toggle input{width:16px;height:16px;accent-color:var(--accent2)}
   .small{font-size:12.5px;color:var(--mut)}
@@ -252,7 +254,7 @@ function buildUI(){
          <div class="aspects" id="asps"></div>
          <div class="stagegrid">
            <div><p class="cap">Source — drag sliders to reframe</p>
-             <div class="cropwrap" id="cw"><video id="srcvid" src="${D.source_url}" muted playsinline preload="metadata"></video>
+             <div class="cropwrap" id="cw"><video id="srcvid" src="${D.source_url}" muted playsinline controls preload="metadata"></video>
                <div class="cropbox" id="box"><span class="tag" id="tag">9:16</span></div></div></div>
            <div><p class="cap">Output preview <span style="flex:1"></span><button class="mini" id="magbtn" style="padding:3px 9px">🔍 Inspect 1×</button></p>
              <div class="outframe" id="of"><span class="rt" id="rt">9:16</span>
@@ -313,6 +315,7 @@ function buildUI(){
 
 function wire(){
   const $=id=>document.getElementById(id);
+  const capBad=new Set();   // FE-07: keys (i-k) of caption time inputs failing validation
   // aspect tabs
   function renderTabs(){
     $('asps').innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${a===aspect?'active':''}" data-a="${a}">${a}${dirtyAspects.has(a)?'<span class="dirty">●</span>':''}</span>`).join('');
@@ -407,22 +410,57 @@ function wire(){
   $('playclip').addEventListener('click',()=>{ srcvid.currentTime=trimIn; srcvid.play(); playing=true; });
 
   /* ---- captions ---- */
+  // FE-07: caption times are clip-relative seconds in [0, clip length]. Validate on
+  // edit — reject NaN, enforce start<end, keep within the window — and surface an
+  // inline error instead of silently coercing junk to 0. A row with a bad value is
+  // NOT written into `caps`, and Apply is blocked until every row is valid.
+  function capWin(){ return Math.max(0, trimOut-trimIn); }
+  function validateTime(i,k,inp){
+    const errEl=$('caps').querySelector(`.caperr[data-err="${i}"]`);
+    const key=i+'-'+k;
+    const fail=msg=>{ capBad.add(key); inp.classList.add('bad'); if(errEl){errEl.textContent=msg; errEl.style.display='block';} markDirty(); };
+    const ok=()=>{ capBad.delete(key); inp.classList.remove('bad');
+      if(errEl){ errEl.textContent=''; errEl.style.display='none'; } };
+    const raw=(inp.value||'').trim();
+    const v=parseFloat(raw);
+    if(raw===''||isNaN(v)){ fail('Enter a number of seconds.'); return; }
+    const win=capWin();
+    if(v<0){ fail('Time can’t be negative.'); return; }
+    if(v>win+0.001){ fail(`Must be within the clip (0–${win.toFixed(2)}s).`); return; }
+    const start = k==='start'? v : (+caps[i].start);
+    const end   = k==='end'  ? v : (+caps[i].end);
+    if(!(start<end)){ fail('Start must be before end.'); return; }
+    caps[i][k]=v; ok();                       // valid → commit the value
+    capsEdited=true; dirtyClip=true; markDirty();
+  }
   function renderCaps(){
+    capBad.clear();                            // DOM rebuilt with last-valid values → clear stale errors
     $('caps').innerHTML = caps.length? caps.map((c,i)=>`<div class="caprow">
        <input class="t" data-i="${i}" data-k="start" value="${(+c.start).toFixed(2)}">
        <input class="t" data-i="${i}" data-k="end" value="${(+c.end).toFixed(2)}">
-       <input data-i="${i}" data-k="text" value="${(c.text||'').replace(/"/g,'&quot;')}"></div>`).join('')
+       <input data-i="${i}" data-k="text" value="${(c.text||'').replace(/"/g,'&quot;')}">
+       <div class="caperr" data-err="${i}"></div></div>`).join('')
        : '<p class="small">No caption segments in this clip.</p>';
     $('caps').querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{
-      const i=+inp.dataset.i, k=inp.dataset.k; caps[i][k]= k==='text'?inp.value:parseFloat(inp.value)||0;
-      capsEdited=true; dirtyClip=true; markDirty(); }));
+      const i=+inp.dataset.i, k=inp.dataset.k;
+      if(k==='text'){ caps[i].text=inp.value; capsEdited=true; dirtyClip=true; markDirty(); return; }
+      validateTime(i,k,inp);
+    }));
     $('caps').style.opacity=capsOn?'1':'.4';
   }
   $('capson').checked=capsOn;
   $('capson').addEventListener('change',()=>{ capsOn=$('capson').checked; dirtyClip=true; renderCaps(); markDirty(); });
-  $('recap').addEventListener('click',async()=>{ // re-derive from transcript for current trim
-    const r=await fetch(`/api/job/${JOB}/clip/${IDX}`); if(!r.ok)return; // base segments are clip-relative to ORIG; re-derive client-side not trivial
-    capsEdited=false; caps=JSON.parse(JSON.stringify((D.captions&&D.captions.segments)||[])); renderCaps(); dirtyClip=true; markDirty(); });
+  $('recap').addEventListener('click',async()=>{ // FE-05: re-derive from transcript for the CURRENT trim window
+    const btn=$('recap'); btn.disabled=true; const prev=btn.textContent; btn.textContent='↺ Re-deriving…';
+    try{
+      const r=await fetch(`/api/job/${JOB}/clip/${IDX}/captions?start=${trimIn}&end=${trimOut}`);
+      if(!r.ok){ $('status').textContent='⚠ Could not re-derive captions ('+r.status+'). Try again.'; return; }
+      const data=await r.json();
+      caps=JSON.parse(JSON.stringify(data.segments||[]));   // now scoped to the new trim
+      capsEdited=true; renderCaps(); dirtyClip=true; markDirty();
+    }catch(e){ $('status').textContent='⚠ Could not re-derive captions — check your connection.'; }
+    finally{ btn.disabled=false; btn.textContent=prev; }
+  });
 
   /* ---- audio ---- */
   $('mute').checked=audio.mute; $('vol').value=audio.volume; $('volv').textContent=Math.round(audio.volume*100)+'%';
@@ -431,8 +469,10 @@ function wire(){
   $('vol').addEventListener('input',()=>{ audio.volume=parseFloat($('vol').value); $('volv').textContent=Math.round(audio.volume*100)+'%'; dirtyClip=true; markDirty(); });
 
   /* ---- apply ---- */
-  function markDirty(){ const any=dirtyClip||dirtyAspects.size>0; $('apply').disabled=!any;
-    $('status').textContent=any?(dirtyClip?'Trim/captions/audio changed → all ratios re-render':`Framing changed: ${[...dirtyAspects].join(', ')}`):'No changes yet.';
+  function markDirty(){ const any=dirtyClip||dirtyAspects.size>0; const bad=capBad.size>0;
+    $('apply').disabled=!any||bad;            // FE-07: a bad caption time blocks re-render
+    $('status').textContent = bad ? '⚠ Fix the highlighted caption time(s) before re-rendering.'
+      : any?(dirtyClip?'Trim/captions/audio changed → all ratios re-render':`Framing changed: ${[...dirtyAspects].join(', ')}`):'No changes yet.';
     updateFlowPill(); }
   $('cancel').addEventListener('click',()=>location.href=`/job/${JOB}`);
   $('apply').addEventListener('click',async ()=>{
