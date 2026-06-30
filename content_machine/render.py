@@ -287,13 +287,17 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
     clip_dir = job.clips_dir / f"clip{idx:02d}"
     clip_dir.mkdir(parents=True, exist_ok=True)
 
-    # caption events (clip-relative): explicit edit segments win, else auto-derive
+    # caption events (clip-relative): explicit edit segments win, else auto-derive.
+    # "karaoke" derives one highlighted event per word from words[]; on a segment
+    # without word timing clip_word_events degrades to a segment-level event.
     if cap_mode == "none":
         events = []
     elif cap.get("segments") is not None:
         events = [{"start": float(s["start"]), "end": float(s["end"]),
                    "text": s.get("text", "")}
                   for s in cap["segments"] if s.get("text", "").strip()]
+    elif cap_mode == "karaoke":
+        events = captions.clip_word_events(segments, start, end)
     else:
         events = captions.clip_caption_events(segments, start, end)
     log.info("render clip %d (%.1f-%.1fs, %d caption events, captions=%s, mute=%s, vol=%.2f) -> %s",
@@ -306,8 +310,10 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
         out = clip_dir / f"{ASPECT_SLUG[aspect]}.mp4"
         t = tf[aspect]
 
-        # try hyperframes animated overlay first if requested
-        if cap_mode == "hyperframes" and events and captions.hyperframes_available():
+        # try hyperframes animated overlay first if requested. Karaoke also prefers
+        # hyperframes (word highlighting in HTML) when it's available; everywhere it
+        # isn't (e.g. Node < 22 / no Chrome) it falls through to PNG karaoke below.
+        if cap_mode in ("hyperframes", "karaoke") and events and captions.hyperframes_available():
             try:
                 overlay = captions.render_hyperframes_overlay(
                     events, ow, oh, clip_dir / f"hf_{ASPECT_SLUG[aspect]}")
@@ -324,9 +330,11 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                     on_aspect_done(aspect, str(out))
                 continue
             except Exception as e:
-                log.warning("hyperframes %s failed (%s) — falling back to overlay captions",
+                log.warning("hyperframes %s failed (%s) — falling back to PNG captions",
                             aspect, str(e)[:160])
-                captions_used = "overlay"  # fall back
+                # karaoke keeps its identity (PNG path still highlights words); the
+                # plain hyperframes mode degrades to static overlay captions.
+                captions_used = "karaoke" if cap_mode == "karaoke" else "overlay"
 
         # default: Pillow PNG overlays (or no captions)
         png_events = []

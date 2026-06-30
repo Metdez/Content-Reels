@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 11
-  total_plans: 11
-  completed_plans: 11
-  percent: 79
+  completed_phases: 12
+  total_plans: 12
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State
@@ -24,10 +24,12 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 34 of 36 — next up (Adopt: word-level karaoke captions via hyperframes); Phases 23–33 complete (11/14).
+Phase: 35 of 36 — next up (Exhaustive Playwright E2E Suite); Phases 23–34 complete (12/14). **Feature-adoption track (33–34) DONE.** Capstone track (35–36) begins.
 Plan: —
-Status: Phase 33 (word-level cut-snapping) shipped — editor trim boundaries now include whisper words[] (137 vs ~18 pts on seeded job) with segment fallback; +2 tests; 203 pass; ruff clean; live-verified. Running autonomously.
-Last activity: 2026-06-30 — Phase 33 complete (WORD-01)
+Status: Phase 34 (karaoke captions) shipped — `karaoke` caption mode (word-by-word highlight from words[]) via PNG overlays; hyperframes gated (can't run here: Node 20<22 + no Chrome) with PROVEN PNG fallback (WinError 193 → PNG karaoke, highlight intact); live ffprobe: h264 1080x1920 + aac, 40 word PNGs; 211 pass; ruff clean; coverage 92.4%. KNOWN: PNG-karaoke is slow on long/wordy clips (1 overlay/word) — opt-in, default overlay unaffected, documented for P36. Running autonomously.
+Last activity: 2026-06-30 — Phase 34 complete (CAPS-01, CAPS-02)
+
+NOTE: seeded fixture e2eseed0001 clip1/9x16 was overwritten by the live karaoke render — re-seed before P35 E2E for a clean baseline.
 
 ### v6 progress
 

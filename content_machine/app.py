@@ -546,7 +546,7 @@ def _clip_editor_payload(job: Job, idx: int) -> dict:
     audio = edit.get("audio") or (rentry or {}).get("audio") or {"mute": False, "volume": 1.0}
     cap = edit.get("captions") or {}
     cap_mode = cap.get("mode", (rentry or {}).get("captions") or "overlay")
-    if cap_mode not in ("overlay", "none"):
+    if cap_mode not in ("overlay", "none", "karaoke"):
         cap_mode = "overlay"
     if cap.get("segments") is not None:
         cap_segs = cap["segments"]

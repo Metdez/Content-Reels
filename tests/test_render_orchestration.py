@@ -250,6 +250,50 @@ def test_render_clip_prev_outputs_preserves_untouched_aspects(stub_encode, tmp_p
     assert fired == ["9:16"]                       # callback fires only for rendered aspect
 
 
+def test_render_clip_karaoke_makes_more_overlay_events_than_overlay(stub_encode, tmp_path, monkeypatch):
+    """CAPS-01: caption_mode='karaoke' emits one overlay event per WORD, so it must
+    feed more time-gated overlay PNGs than 'overlay' (one per segment) for the same
+    clip. Also asserts the karaoke events carry a per-word highlight index."""
+    d = _seed_job_inputs(tmp_path, "jobkar0001", n_clips=1)
+    job = _make_job(tmp_path, "jobkar0001")
+    clips = json.loads((d / "clips.json").read_text())["clips"]
+    # segments WITH word timing covering the clip window (clip 0 starts at 0.0)
+    segments = [
+        {"start": 0.0, "end": 1.5, "text": "alpha beta gamma", "words": [
+            {"word": "alpha", "start": 0.0, "end": 0.5},
+            {"word": "beta", "start": 0.5, "end": 1.0},
+            {"word": "gamma", "start": 1.0, "end": 1.5}]},
+        {"start": 1.5, "end": 3.0, "text": "delta epsilon", "words": [
+            {"word": "delta", "start": 1.5, "end": 2.2},
+            {"word": "epsilon", "start": 2.2, "end": 3.0}]},
+    ]
+
+    seen = {}
+
+    def spy_pngs(events, w, h, outdir, font=None):
+        seen.setdefault("calls", []).append(list(events))
+        outdir = Path(outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        out = []
+        for i, e in enumerate(events):
+            p = outdir / f"cap_{i:03d}.png"
+            p.write_bytes(b"\x89PNG")
+            out.append({"png": p, "start": e["start"], "end": e["end"]})
+        return out
+    monkeypatch.setattr(r.captions, "render_caption_pngs", spy_pngs)
+
+    r.render_clip(job, clips[0], 1, segments, aspects=("9:16",), caption_mode="overlay")
+    overlay_events = seen["calls"][-1]
+    res = r.render_clip(job, clips[0], 1, segments, aspects=("9:16",), caption_mode="karaoke")
+    karaoke_events = seen["calls"][-1]
+
+    assert len(overlay_events) == 2                          # one per segment
+    assert len(karaoke_events) == 5                          # one per word (3 + 2)
+    assert len(karaoke_events) > len(overlay_events)
+    assert all("highlight" in e for e in karaoke_events)     # accent index per word
+    assert res["captions"] == "karaoke"
+
+
 def test_render_clip_hyperframes_path(stub_encode, tmp_path, monkeypatch):
     d = _seed_job_inputs(tmp_path, "jobhf0001", n_clips=1)
     job = _make_job(tmp_path, "jobhf0001")

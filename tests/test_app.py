@@ -157,6 +157,27 @@ def test_clip_editor_payload_structure(monkeypatch, tmp_path):
     assert p["boundaries"][0] == 0.0 and p["duration"] == 30
 
 
+def test_clip_editor_payload_accepts_karaoke_mode(monkeypatch, tmp_path):
+    """CAPS-02: a stored 'karaoke' caption mode must survive the payload (not be
+    coerced back to 'overlay'); an unknown mode still falls back to 'overlay'."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    from content_machine.jobs import Job
+    d = _make_job(tmp_path, "kara", {"render": {"status": "done"}})
+    (d / "source.mp4").write_bytes(b"x")
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 0, "end": 10, "title": "K"}]}))
+    (d / "transcript.json").write_text(json.dumps({"duration": 30, "segments": [
+        {"start": 0, "end": 3, "text": "hello"}]}))
+    (d / "clips" / "clip01").mkdir(parents=True, exist_ok=True)
+    edit_path = d / "clips" / "clip01" / "edit.json"
+
+    edit_path.write_text(json.dumps({"captions": {"mode": "karaoke"}}))
+    assert app._clip_editor_payload(Job.load("kara"), 1)["captions"]["mode"] == "karaoke"
+
+    edit_path.write_text(json.dumps({"captions": {"mode": "bogus"}}))
+    assert app._clip_editor_payload(Job.load("kara"), 1)["captions"]["mode"] == "overlay"
+
+
 def _wait_rerender(app, key, timeout=5.0):
     """Block until the per-clip re-render worker thread settles (or timeout)."""
     import time

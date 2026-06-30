@@ -107,6 +107,95 @@ def test_render_caption_pngs_empty_events_still_creates_dir(tmp_path):
     assert outdir.is_dir()
 
 
+# --- clip_word_events (karaoke event builder, CAPS-01) -----------------------
+
+def _seg(start, end, text, words=None):
+    s = {"start": start, "end": end, "text": text}
+    if words is not None:
+        s["words"] = words
+    return s
+
+
+def _words(start, names, step=0.5):
+    """Build contiguous word dicts starting at `start`, each `step` long."""
+    out, t = [], start
+    for w in names:
+        out.append({"word": w, "start": round(t, 3), "end": round(t + step, 3)})
+        t += step
+    return out
+
+
+def test_clip_word_events_one_event_per_word_clip_relative_with_highlight():
+    segs = [_seg(10.0, 12.0, "alpha beta gamma",
+                 _words(10.0, ["alpha", "beta", "gamma"]))]
+    events = cap.clip_word_events(segs, 10.0, 14.0, max_chars=100)  # one line
+    assert len(events) == 3                                  # one event per word
+    assert [e["highlight"] for e in events] == [0, 1, 2]     # accent walks the line
+    assert all(e["text"] == "alpha beta gamma" for e in events)
+    # clip-relative times: first word at 10.0 -> 0.0
+    assert events[0]["start"] == 0.0 and events[0]["end"] == 0.5
+    assert events[1]["start"] == 0.5
+    # sorted by start
+    assert [e["start"] for e in events] == sorted(e["start"] for e in events)
+
+
+def test_clip_word_events_wraps_into_lines_with_per_line_highlight():
+    names = ["one", "two", "three", "four", "five"]
+    segs = [_seg(0.0, 5.0, " ".join(names), _words(0.0, names))]
+    # small char budget forces multiple display lines; highlight is per-line index
+    events = cap.clip_word_events(segs, 0.0, 10.0, max_chars=8)
+    # more than one distinct line of text
+    assert len({e["text"] for e in events}) >= 2
+    # highlight resets to 0 at the start of each new line
+    first_of_each_line = {}
+    for e in events:
+        first_of_each_line.setdefault(e["text"], e["highlight"])
+    assert set(first_of_each_line.values()) == {0}
+
+
+def test_clip_word_events_segment_fallback_when_no_words():
+    segs = [_seg(10.0, 13.0, "no word timing here", words=None),
+            _seg(13.0, 15.0, "this one has words", _words(13.0, ["this", "one"]))]
+    events = cap.clip_word_events(segs, 10.0, 16.0)
+    fallback = events[0]
+    assert "highlight" not in fallback                       # segment-level, no accent
+    assert fallback["text"] == "no word timing here"
+    assert fallback["start"] == 0.0 and fallback["end"] == 3.0
+    # the word-timed segment still produced per-word events with highlight
+    assert any("highlight" in e for e in events[1:])
+
+
+# --- karaoke PNG rendering ---------------------------------------------------
+
+def test_render_caption_pngs_karaoke_highlights_each_word(tmp_path):
+    events = [
+        {"start": 0.0, "end": 0.5, "text": "red green blue", "highlight": 0},
+        {"start": 0.5, "end": 1.0, "text": "red green blue", "highlight": 1},
+        {"start": 1.0, "end": 1.5, "text": "red green blue", "highlight": 2},
+    ]
+    outdir = tmp_path / "kara"
+    out = cap.render_caption_pngs(events, 1080, 1920, outdir)
+    assert len(out) == 3
+    for item in out:
+        assert item["png"].exists()
+    # each PNG must contain the accent color somewhere (the highlighted word)
+    accent = cap.KARAOKE_ACCENT[:3]
+    for item in out:
+        img = Image.open(item["png"]).convert("RGBA")
+        colors = {c[:3] for _, c in img.getcolors(maxcolors=1 << 20)}
+        assert accent in colors, "expected the karaoke accent color in the frame"
+
+
+def test_render_caption_png_highlight_differs_from_plain(tmp_path):
+    plain = cap.render_caption_png("alpha beta gamma", 1080, 1920, tmp_path / "plain.png")
+    hi = cap.render_caption_png("alpha beta gamma", 1080, 1920, tmp_path / "hi.png", highlight=1)
+    accent = cap.KARAOKE_ACCENT[:3]
+    plain_colors = {c[:3] for _, c in Image.open(plain).convert("RGBA").getcolors(1 << 20)}
+    hi_colors = {c[:3] for _, c in Image.open(hi).convert("RGBA").getcolors(1 << 20)}
+    assert accent not in plain_colors                        # plain path unchanged: no accent
+    assert accent in hi_colors                               # highlight path adds the accent
+
+
 # --- hyperframes_bin / hyperframes_available ---------------------------------
 
 def test_hyperframes_bin_prefers_local_install(tmp_path, monkeypatch):
@@ -164,6 +253,18 @@ def test_build_caption_composition_scaffolds_expected_html(tmp_path):
     assert "Hello there" in html and "Second line" in html  # events embedded as JSON
     assert "font-size:86px" in html                         # max(36, round(1920 * 0.045))
     assert "bottom:192px" in html                           # round(1920 * 0.10)
+
+
+def test_build_caption_composition_supports_word_highlight(tmp_path):
+    """CAPS-02: karaoke events (with a `highlight` index) scaffold HTML that wraps the
+    current word in the accent color. Code-complete for Node>=22+Chrome boxes."""
+    events = [{"start": 0.0, "end": 0.5, "text": "hello world", "highlight": 1}]
+    proj = tmp_path / "kara_comp"
+    cap.build_caption_composition(events, 1080, 1920, 30, proj)
+    html = (proj / "index.html").read_text()
+    assert "e.highlight" in html                            # highlight branch present
+    assert "#FFE600" in html                                # accent color
+    assert '"highlight": 1' in html or '"highlight":1' in html  # event embedded
 
 
 def test_build_caption_composition_empty_events_zero_duration(tmp_path):

@@ -133,7 +133,7 @@ const ASPECTS=["9:16","1:1","16:9"];
 const PREVIEW_CAP=420;   // unified preview height base (MAG magnifier multiplies on top)
 let D=null, TF={}, aspect="9:16";
 let trimIn=0, trimOut=0, winStart=0, winEnd=0, dur=0;
-let caps=[], capsOn=true, capsEdited=false, audio={mute:false,volume:1};
+let caps=[], capsOn=true, capsEdited=false, karaoke=false, audio={mute:false,volume:1};
 let dirtyClip=false, dirtyAspects=new Set();
 let sw=0, sh=0, BOUNDS=[];
 let MAG=1;   // preview magnifier (inspect zoom) — does NOT change output framing
@@ -297,6 +297,7 @@ function buildUI(){
        <div class="card">
          <h2>Captions</h2>
          <label class="toggle"><input type="checkbox" id="capson"> Burn captions into this clip</label>
+         <label class="toggle"><input type="checkbox" id="kara"> Karaoke (word-by-word highlight)</label>
          <div class="capslist" id="caps"></div>
          <button class="mini" id="recap" style="margin-top:10px">↺ Re-derive from transcript</button>
        </div>
@@ -451,7 +452,13 @@ function wire(){
     $('caps').style.opacity=capsOn?'1':'.4';
   }
   $('capson').checked=capsOn;
-  $('capson').addEventListener('change',()=>{ capsOn=$('capson').checked; dirtyClip=true; renderCaps(); markDirty(); });
+  $('capson').addEventListener('change',()=>{ capsOn=$('capson').checked; $('kara').disabled=!capsOn; dirtyClip=true; renderCaps(); markDirty(); });
+  // Karaoke: word-by-word highlight (uses transcript word timing; segment text edits
+  // don't apply). Turning it on implies captions are on.
+  $('kara').checked=karaoke; $('kara').disabled=!capsOn;
+  $('kara').addEventListener('change',()=>{ karaoke=$('kara').checked;
+    if(karaoke&&!capsOn){ capsOn=true; $('capson').checked=true; renderCaps(); }
+    dirtyClip=true; markDirty(); });
   $('recap').addEventListener('click',async()=>{ // FE-05: re-derive from transcript for the CURRENT trim window
     const btn=$('recap'); btn.disabled=true; const prev=btn.textContent; btn.textContent='↺ Re-deriving…';
     try{
@@ -481,7 +488,9 @@ function wire(){
     const aspectsToRender = dirtyClip ? ASPECTS : [...dirtyAspects];
     if(!aspectsToRender.length) return;
     const body={ start:trimIn, end:trimOut, transforms:TF,
-      captions: capsOn ? (capsEdited?{mode:'overlay',segments:caps}:{mode:'overlay'}) : {mode:'none'},
+      captions: !capsOn ? {mode:'none'}
+        : karaoke ? {mode:'karaoke'}                 // word timing comes from the transcript
+        : (capsEdited?{mode:'overlay',segments:caps}:{mode:'overlay'}),
       audio:audio, aspects:aspectsToRender };
     const queued = rerenderActive;
     rerenderActive = true;                       // committing to a render now
@@ -532,7 +541,7 @@ function bootError(msg){ const b=document.getElementById('bootmsg');
     if(winEnd<=winStart) winEnd=winStart+Math.max(5,D.end-D.start+10);
     // captions/audio may be null/missing — default them safely
     const capObj=D.captions||{};
-    caps=JSON.parse(JSON.stringify(capObj.segments||[])); capsOn=capObj.mode!=='none';
+    caps=JSON.parse(JSON.stringify(capObj.segments||[])); capsOn=capObj.mode!=='none'; karaoke=capObj.mode==='karaoke';
     audio={mute:!!(D.audio&&D.audio.mute), volume:(D.audio&&D.audio.volume!=null)?D.audio.volume:1};
     buildUI();
   }catch(err){
