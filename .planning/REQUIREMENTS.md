@@ -96,6 +96,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Multi-user, accounts, hosting | Single local user for v1 |
 | API key as the default selection path | Author chose subscription headless; API key is a deferred fallback only |
 | video-use as a dependency | Breaks local-first (ElevenLabs cloud); used only as a pattern reference |
+| Full multi-track timeline NLE (splice/reorder/transitions) | v3 editor is a focused per-clip tool; a real NLE is unreliable on a local ffmpeg pipeline and overkill for short vertical clips |
 
 ## Traceability
 
@@ -149,9 +150,9 @@ Explicitly excluded. Documented to prevent scope creep.
 
 **v3 Coverage:**
 - v3 requirements: 15 total
-- Mapped to phases: 15
+- Mapped to phases: 15 (Phase 9: 3 · Phase 10: 2 · Phase 11: 4 · Phase 12: 6)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-30 — v3 requirements (zoom/crop + editor + progress) defined*
+*Last updated: 2026-06-30 — v3 traceability confirmed against ROADMAP (15/15 → Phases 9–12)*

@@ -142,10 +142,101 @@ rendered clips carry **audio**. Driven by the author's switch to a Windows machi
 
 ---
 
+## Milestone v3 — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
+
+v2 shipped cross-platform with an interactive crop preview and guaranteed audio. v3 gives the user
+real creative control: framing stops being a single horizontal nudge and becomes a full per-aspect
+transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}` — dialed in live before the run AND inside a focused
+non-destructive per-clip editor — while an honest master + per-section progress system replaces the
+"stuck waiting on a black screen" wait. The transform model (Phase 9) is the spine: the pre-run
+preview (Phase 10) and the clip editor (Phase 12) are both live-preview surfaces over the same crop
+math, and the progress system (Phase 11) runs orthogonally over the existing job runner. Scope is
+locked: a focused per-clip tool, not a multi-track NLE.
+
+- [ ] **Phase 9: Per-Aspect Transform Model + Crop Math** - Replace scalar `x_offset` with a per-aspect `{zoom, x, y}` transform; `compute_crop` gains zoom + vertical pan; old `x_offset` runs still render; unit tests
+- [ ] **Phase 10: Pre-Run Preview Upgrade (live per-aspect zoom/pan)** - Per-aspect zoom + x/y pan controls on the preview page with instant CSS-transform preview mirroring the Python crop math; chosen transforms become the job's run defaults
+- [ ] **Phase 11: Progress System (master + per-section bars)** - Real backend progress numbers (transcribe % from whisper-cli, render per-aspect-per-clip counts); weighted master + per-section bars; clips surface as each finishes; Playwright-verified
+- [ ] **Phase 12: Focused Clip Editor** - Full-screen `/job/{id}/clip/{idx}/edit`: trim (snap-to-sentence), per-aspect reframe (+copy-to-all), caption text/timing + toggle, audio keep/mute/volume; non-destructive `edit.json`; per-aspect re-render; back-to-grid
+
+### Phase 9: Per-Aspect Transform Model + Crop Math
+**Goal**: Replace the single scalar `x_offset` with a per-aspect transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}` and teach `render.compute_crop` to apply zoom (a tighter-than-fit crop window) plus vertical pan, while still accepting old `x_offset` run params so existing jobs and manifests keep rendering. This is the data-model + math foundation that the live previews in Phases 10 and 12 build on — get the crop arithmetic right once, in Python, with tests.
+**Depends on**: v2.0 (Phase 8 — existing render pipeline: `compute_crop`/`build_render_cmd`/`run_params`)
+**Requirements**: ZOOM-01, ZOOM-02, ZOOM-03
+**Success Criteria** (what must be TRUE):
+  1. `compute_crop` accepts a `{zoom, x, y}` transform and, at `zoom=1.0`, returns exactly today's max-fit center crop for 9:16/1:1/16:9 on EnlayeParis.mp4 (regression-locked); at `zoom=2.0` it returns a half-size crop window (a tighter framing)
+  2. Panning `x` and `y` in [-1,1] moves the crop window across the real horizontal AND vertical slack the zoom creates, clamped so the window never leaves the source frame (no out-of-bounds crop at any aspect on the test video)
+  3. Each aspect ratio carries its own independent `{zoom, x, y}`; a run stores three transforms as run-wide defaults, and a single aspect can be overridden without disturbing the other two
+  4. A job whose run params still use the old scalar `x_offset` renders byte-for-byte as before (back-compat shim maps `x_offset` → `{zoom:1, x:x_offset, y:0}`); old `render.json` manifests load without error
+  5. `pytest` covers the crop math — `zoom=1` parity with the current center crop, `zoom>1` window sizing, x/y clamping at the edges, and the `x_offset` back-compat path — and is green on Windows + macOS
+**Plans**: TBD
+
+Plans:
+- [ ] 09-01: TBD
+
+**Pitfalls to bake in**: keep `compute_crop`'s return signature `(crop_w, crop_h, x, y)` stable so `crop_scale_filter`/`build_render_cmd` keep working; do the even-dimension rounding (`% 2`) AFTER applying zoom so yuv420p stays happy; clamp `zoom≥1.0` (zoom<1 would crop outside the frame); height-limited aspects (16:9 from a 16:9-ish source) have little/no slack — clamp pan to 0 there rather than erroring; the back-compat shim is load-bearing — there are live v2 jobs with scalar `x_offset` in `render.json` run_params.
+
+### Phase 10: Pre-Run Preview Upgrade (live per-aspect zoom/pan)
+**Goal**: Upgrade the existing pre-run preview page so the user dials in per-aspect **zoom + x/y pan** with an instant CSS-transform preview (no ffmpeg) that mirrors the Phase 9 Python crop math, then commits those three transforms as the job's default framing for the run — replacing the single horizontal x-offset slider.
+**Depends on**: Phase 9 (transform model + crop math)
+**Requirements**: ZOOM-04, ZOOM-05
+**Success Criteria** (what must be TRUE):
+  1. The preview page shows zoom + horizontal + vertical pan controls for each of 9:16, 1:1, and 16:9, replacing the single x-offset slider
+  2. Dragging zoom or pan updates the framed crop-box preview instantly via CSS transform, deferring all ffmpeg work until **Run** is clicked (no render request fires while the user is adjusting)
+  3. The live browser preview crop agrees with `render.compute_crop` for the same `{zoom, x, y}` — box position and size match within a pixel on EnlayeParis.mp4 across all three aspects
+  4. Clicking **Run** starts transcribe→select→render with the three chosen per-aspect transforms persisted as the job's run defaults (visible in `render.json` run_params), and the rendered clips reflect that exact framing
+**Plans**: TBD
+
+Plans:
+- [ ] 10-01: TBD
+
+**UI hint**: yes
+
+**Pitfalls to bake in**: the CSS-transform preview and the ffmpeg crop must share ONE math definition (port `compute_crop` to JS or expose it via an endpoint) or they will silently diverge — this was already a Phase 6 success criterion for x_offset, now multiplied by zoom+y; defer all encoding to Run (the whole point is no ffmpeg until commit); persist transforms into the same `run_params` seam the `/run` route already writes (extend, don't replace, so the back-compat shim still applies).
+
+### Phase 11: Progress System (master + per-section bars)
+**Goal**: Make a running job honest. The backend emits real progress numbers — transcribe % parsed from whisper-cli output, render advanced per-aspect-per-clip — and the job page shows a per-section bar for each stage plus a weighted master bar, with each clip/aspect appearing in the review grid the instant it finishes encoding instead of all at once at the end. Verified visually with Playwright screenshots at multiple progress states.
+**Depends on**: Phase 4 (job runner + render loop / `update_stage`) — orthogonal to the zoom/editor track, can be built in parallel with Phases 9–10
+**Requirements**: PROG-01, PROG-02, PROG-03, PROG-04
+**Success Criteria** (what must be TRUE):
+  1. The job page shows a separate progress bar for transcribe (driven by a real % parsed from whisper-cli output), select, and render (advancing per aspect-per-clip — e.g. 14/18 on a 6-clip × 3-aspect job)
+  2. A master bar shows weighted overall completion that moves monotonically from 0→100% across the three stages and reaches 100% exactly when the job finishes
+  3. Each clip/aspect tile appears in the review grid the moment that file finishes encoding — not only at the end (observable on the 6-clip EnlayeParis.mp4 run)
+  4. Playwright captures screenshots at multiple progress states (mid-transcribe, mid-render, complete) and the master + per-section bars render correctly and look good at each
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01: TBD
+
+**UI hint**: yes
+
+**Pitfalls to bake in**: whisper-cli prints progress to stderr in a parseable form — drive the transcribe bar off that, don't fake a timer; render count is deterministic (`len(clips) × len(aspects)`) so the render bar can be exact; `select` has no natural %, treat it as an indeterminate/at-stage-boundary step in the weighting; reuse the existing polling-over-`job.json` mechanism (stages already tracked via `update_stage`) before reaching for SSE; stream finished clips into the grid by writing each clip's manifest entry as it completes, not only the final `render.json` flush.
+
+### Phase 12: Focused Clip Editor
+**Goal**: A focused, full-screen, non-destructive editor at `/job/{id}/clip/{idx}/edit` where the user trims (snap-to-sentence), reframes each aspect (zoom/pan with a copy-to-all action), edits caption text/timing and toggles captions, and sets audio keep/mute/volume — all saved to a per-clip `edit.json` and applied by a per-aspect re-render that only re-encodes the aspects that changed — then returns to the grid with the edits reflected. A per-clip tool, explicitly not a multi-track NLE.
+**Depends on**: Phase 9 (transform model — reframe writes `{zoom, x, y}` per aspect), Phase 10 (reuses the live-preview JS for in-editor reframe)
+**Requirements**: EDIT-01, EDIT-02, EDIT-03, EDIT-04, EDIT-05, EDIT-06
+**Success Criteria** (what must be TRUE):
+  1. Opening `/job/{id}/clip/{idx}/edit` for any rendered EnlayeParis.mp4 clip loads a full-screen editor; saving returns to the review grid with that clip's changes reflected
+  2. The trim scrubber sets in/out points that snap to sentence boundaries from word timings, and the reframe controls set per-aspect zoom/pan with a "copy this framing to all aspects" action
+  3. Caption text and per-segment timing are editable and captions can be toggled on/off; the clip's audio can be kept, muted, or set to a chosen volume — and every one of these changes is visible/audible in the re-rendered clip
+  4. Edits persist to a per-clip `edit.json` (non-destructive — the source and other clips are untouched); re-render applies them and only re-encodes the aspects that actually changed, leaving unchanged aspect files in place
+**Plans**: TBD
+
+Plans:
+- [ ] 12-01: TBD
+
+**UI hint**: yes
+
+**Pitfalls to bake in**: non-destructive means `edit.json` is the source of truth and re-render derives outputs from it (never mutate `source` or the original `clips.json`); reuse Phase 9's snap-to-sentence logic from selection rather than re-implementing it; trim must re-derive caption events for the new in/out window; per-aspect dirty-tracking (which aspects' `{zoom,x,y}`/trim/captions/audio changed) drives the "only changed aspects re-encode" rule — get this wrong and you either re-encode everything or serve stale files; audio mute/volume rides the existing `-map 0:a?` + `-c:a aac` path (a volume filter or `-an`), keeping the Phase 8 "always has audio" guarantee unless explicitly muted; the in-editor reframe preview must reuse Phase 10's shared crop math, not a second copy.
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+
+**Active milestone: v3 (Phases 9–12).** Phases 1–8 complete (v1.0 + v2.0, verified live).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -153,6 +244,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8
 | 2. Clip Selection via Claude | 0/TBD | Not started | - |
 | 3. Render — Cut, Reframe, Captions | 0/TBD | Not started | - |
 | 4. Localhost UI + Job Runner | 0/TBD | Not started | - |
+| 9. Per-Aspect Transform Model + Crop Math | 0/TBD | Not started | - |
+| 10. Pre-Run Preview Upgrade | 0/TBD | Not started | - |
+| 11. Progress System | 0/TBD | Not started | - |
+| 12. Focused Clip Editor | 0/TBD | Not started | - |
 
 ---
 
@@ -169,11 +264,29 @@ All 20 v1 requirements mapped to exactly one phase. No orphans, no duplicates.
 
 **Total: 20/20 mapped ✓**
 
+### v3 Coverage
+
+All 15 v3 requirements mapped to exactly one phase. No orphans, no duplicates.
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 9. Per-Aspect Transform Model + Crop Math | ZOOM-01, ZOOM-02, ZOOM-03 | 3 |
+| 10. Pre-Run Preview Upgrade | ZOOM-04, ZOOM-05 | 2 |
+| 11. Progress System | PROG-01, PROG-02, PROG-03, PROG-04 | 4 |
+| 12. Focused Clip Editor | EDIT-01, EDIT-02, EDIT-03, EDIT-04, EDIT-05, EDIT-06 | 6 |
+
+**Total: 15/15 mapped ✓**
+
 ## Research Flags (carry into planning)
 
 - **Phase 2:** The non-bare `claude -p` subscription invocation contract (OAuth/keychain behavior, `--json-schema` stability across versions, structured-output parsing) and the selection prompt design are load-bearing unknowns. Worth `--research-phase`.
 - **Phase 3:** hyperframes integration is the freshest unknown — authoring segment-timed transparent caption overlays and compositing them over an ffmpeg-cropped clip per aspect ratio is under-researched. Flag for research; ffmpeg ASS captions are the proven fallback.
 - **Phases 1 & 4:** standard patterns (whisper.cpp CLI + ffmpeg audio extraction; localhost upload→progress→download) — skip `--research-phase`.
+- **Phase 9 (v3):** mostly deterministic crop arithmetic — skip research; the only subtlety is the `x_offset` back-compat shim, covered by tests.
+- **Phase 10 (v3):** standard pattern (CSS-transform live preview over shared crop math, already proven for x_offset in Phase 6) — skip research; the risk is JS↔Python math divergence, handled by the pixel-parity criterion.
+- **Phase 11 (v3):** whisper-cli stderr progress-format parsing is the one unknown — a quick spike, not a full research phase.
+- **Phase 12 (v3):** the per-aspect dirty-tracking / "only changed aspects re-encode" design is the load-bearing unknown — worth a short `--research-phase` or spike on the `edit.json` schema before planning.
 
 ---
 *Roadmap created: 2026-06-29 — granularity: coarse, 4 phases, sequential numbering*
+*Updated: 2026-06-30 — v3 milestone appended (Phases 9–12: per-aspect zoom/crop + clip editor + progress bars); 15/15 v3 requirements mapped*

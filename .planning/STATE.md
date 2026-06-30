@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v3
 milestone_name: — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
 status: planning
-last_updated: "2026-06-30T01:19:47.175Z"
+last_updated: "2026-06-30T02:05:00.000Z"
 last_activity: 2026-06-30
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +20,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Milestone v2 — Cross-platform (Windows) + interactive crop preview + UI polish + guaranteed audio. v1.0 (phases 1-4) complete.
+**Current focus:** Milestone v3 — Per-aspect zoom/crop transform + focused clip editor + honest progress bars. Phases 9–12. v1.0 (P1–4) and v2.0 (P5–8) complete and verified live.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — v3 roadmap created (Phases 9–12), ready to plan Phase 9
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-30 — Milestone v3 started
+Status: Roadmap defined (4 v3 phases mapped, 15/15 requirements covered)
+Last activity: 2026-06-30 — v3 milestone appended to ROADMAP.md
+
+### v3 phase map (Phases 9–12)
+
+- P9 Per-Aspect Transform Model + Crop Math — replace scalar `x_offset` with `{zoom, x, y}` per aspect in `render.compute_crop`; back-compat shim for old `x_offset` runs; unit tests (ZOOM-01/02/03)
+- P10 Pre-Run Preview Upgrade — per-aspect zoom + x/y pan controls with live CSS preview mirroring the Python crop math; transforms become run defaults (ZOOM-04/05). Depends on P9.
+- P11 Progress System — real transcribe % (whisper-cli) + render per-aspect-per-clip counts; weighted master + per-section bars; clips surface as they finish; Playwright-verified (PROG-01/02/03/04). Orthogonal to P9/P10.
+- P12 Focused Clip Editor — `/job/{id}/clip/{idx}/edit`: trim (snap-to-sentence), per-aspect reframe (+copy-to-all), caption text/timing + toggle, audio keep/mute/volume; non-destructive `edit.json`; per-aspect re-render (EDIT-01..06). Depends on P9 + P10.
 
 ### Verified live (v2, Windows 11, real binaries + browser)
 
@@ -77,10 +84,12 @@ Last activity: 2026-06-30 — Milestone v3 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Engine locked: whisper.cpp (transcribe) + ffmpeg (cut/crop/assemble) + hyperframes (animated captions in v1). video-use is a pattern reference only, not a dependency.
-- Clip selection = non-bare `claude -p` on the subscription only — no API-key fallback in v1. Cached by transcript hash. Accepted risk: shared subscription limits + ToS gray area on scripted access.
-- v1 reframe = center crop + manual x-offset; captions segment-level; cuts snap to sentence boundaries (CV speaker-tracking and word-level karaoke deferred to v2).
-- CLI-first: phases 1–3 are a headless pipeline; phase 4 wraps it in a localhost UI. Local-first: nothing leaves the machine (files on disk + optional SQLite).
+- v3 framing model: replace the single scalar `run_params.x_offset` with a per-aspect transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}`; each clip can override per aspect. Back-compat shim maps old `x_offset` → `{zoom:1, x:x_offset, y:0}` so v2 jobs/manifests keep rendering. (Phase 9)
+- v3 live preview: the browser CSS-transform preview and the ffmpeg crop must share ONE crop-math definition (mirror/expose `render.compute_crop`) — divergence is the main risk, gated by a pixel-parity criterion. (Phases 10, 12)
+- v3 editor scope: focused per-clip tool (trim, reframe, captions, audio) with non-destructive `edit.json` and per-aspect re-render — explicitly NOT a multi-track NLE (out of scope by decision). (Phase 12)
+- v3 progress: drive the transcribe bar off real whisper-cli stderr %, render bar off deterministic `len(clips)×len(aspects)`; reuse polling-over-`job.json` (`update_stage`) before reaching for SSE. (Phase 11)
+- Engine locked: whisper.cpp (transcribe) + ffmpeg (cut/crop/assemble) + Pillow PNG / hyperframes (captions). video-use is a pattern reference only, not a dependency.
+- Clip selection = non-bare `claude -p` on the subscription only — no API-key fallback. Cached by transcript hash.
 
 ### Pending Todos
 
@@ -88,8 +97,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 2: `claude -p` subscription invocation contract + selection prompt are load-bearing unknowns — flag for `--research-phase`. Accepted ToS/ban risk on scripted subscription use; keep `select_clips()` seam swappable, invoke at most once per video, log spend.
-- Phase 3: hyperframes overlay-compositing workflow is under-researched — flag for research; ffmpeg ASS burn-in is the proven fallback.
+- Phase 9: `x_offset` back-compat shim is load-bearing — live v2 jobs carry scalar `x_offset` in `render.json` run_params; `compute_crop`'s `(crop_w, crop_h, x, y)` return signature must stay stable so `crop_scale_filter`/`build_render_cmd` keep working.
+- Phase 10/12: JS↔Python crop-math divergence is the recurring risk — share one definition, verify pixel parity on EnlayeParis.mp4.
+- Phase 11: whisper-cli stderr progress format needs a quick parse spike before planning.
+- Phase 12: per-aspect dirty-tracking ("only changed aspects re-encode") and the `edit.json` schema are the load-bearing unknowns — worth a short spike/`--research-phase`.
 
 ## Deferred Items
 
@@ -97,10 +108,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Reframe | REFRAME-01 speaker-aware auto-reframe (CV/active-speaker) | Deferred (v2 backlog) | v1 |
+| Captions | CAPS-01 word-level karaoke (forced alignment) | Deferred (v2 backlog) | v1 |
+| Distribution | DIST-01/02/03 API-key fallback, LinkedIn publish, batch queue | Deferred | v1 |
 
 ## Session Continuity
 
-Last session: 2026-06-29 16:33
-Stopped at: ROADMAP.md and STATE.md created; requirements traceability confirmed (20/20 → P1-P4)
-Resume file: None
+Last session: 2026-06-30
+Stopped at: v3 ROADMAP.md appended (Phases 9–12); REQUIREMENTS.md v3 traceability confirmed (15/15 → P9–P12); STATE.md total_phases set to 4
+Resume file: None — next is `/gsd-plan-phase 9`
