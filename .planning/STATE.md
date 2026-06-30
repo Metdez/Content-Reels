@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v4
 milestone_name: — Cross-Platform Hardware Acceleration
-status: planning
+status: complete
 last_updated: "2026-06-30T09:33:54.078Z"
 last_activity: 2026-06-30
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 4
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -20,14 +20,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Milestone v3 — Per-aspect zoom/crop transform + focused clip editor + honest progress bars. Phases 9–12. v1.0 (P1–4) and v2.0 (P5–8) complete and verified live.
+**Current focus:** Milestone v4 — Cross-Platform Hardware Acceleration (GPU encode + probe/fallback). Phases 13–16 complete. v1.0 (P1–4), v2.0 (P5–8), v3 (P9–12) complete and verified live.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 16 of 16 complete — milestone v4 delivered
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-30 — Milestone v4 started
+Status: All 4 v4 phases (13–16) built + verified live on Windows (NVENC render, real ffprobe, benchmark). 55 tests pass. windows-optimized + mac-optimized pushed to GitHub.
+Last activity: 2026-06-30 — commits 41156e2 (P13), e81618b (P14), 5405af0 (P15), 5280b0a/540b582 (P16 branches)
+
+### Verified live (v4, Windows 11, RTX 5060 + real binaries + ffprobe)
+
+- P13 hwaccel core: select_encoder() probes encoders once + caches; picks nvenc on this machine; build_render_cmd emits the GPU tail on all paths; a real 9:16 render = valid 1080×1920 h264 + aac + faststart; CM_FORCE_CPU=1 → x264 parity; _run_encode auto-retries on libx264 if a GPU encode fails (unit-tested). 60s clip: NVENC 7.85s vs x264 10.68s = 1.36×.
+- P14 Windows enablement: setup.ps1 pins NVENC-capable ffmpeg 7.1 (master needs driver ≥610; 591.74 only has the older API — 7.1 NVENC verified) + self-migrates an old build. scripts/benchmark.py times GPU-vs-CPU render + ffprobe-validates + times CPU transcribe. **CUDA whisper DROPPED (data): prebuilt cuBLAS 12.4 is ~40× slower than CPU on Blackwell — Windows transcribe stays CPU BLAS (~9× realtime); ACCEL-02/SAFE-02 deferred.**
+- P15 macOS tuning: videotoolbox profile + Metal whisper; probe+fallback unit-tested with a stubbed Mac (picks h264_videotoolbox on darwin, falls back to x264 if absent) — untestable Mac path can't break.
+- P16 branch split: windows-optimized + mac-optimized forked off the shared core (differ only in the README platform banner), each one-command quickstart, both pushed to github.com/Metdez/Content-Reels.
+
+### Also fixed this session (regressions, verified live in-browser)
+
+- Run crash (`transcript.json not found`): transcribe() re-derived a content-hash job id and wrote the transcript to the wrong dir while the pipeline ran under the per-upload nonce id — threaded the running Job into transcribe(). Verified: Run completes end-to-end, all 3 ratios render.
+- Preview flashing: drawOut() sized the frame from its own mutated width (oscillated at the height cap) — size from the stable parent column. Verified: frame steady at 315px across 40 frames, canvas live.
 
 ### Verified live (v3, Windows 11, real binaries + browser + ffprobe)
 

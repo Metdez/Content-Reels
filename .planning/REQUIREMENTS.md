@@ -200,12 +200,13 @@ Explicitly excluded. Documented to prevent scope creep.
 | PLAT-01 | Phase 14 | Done (ffmpeg 7.1 pin; whisper stays CPU) |
 | ACCEL-03 | Phase 15 | Done (VideoToolbox+Metal defaults; probe/fallback unit-tested) |
 | PLAT-02 | Phase 15 | Done (Homebrew ffmpeg VideoToolbox + Metal whisper) |
-| PLAT-03 | Phase 16 | Pending |
-| PLAT-04 | Phase 16 | Pending |
+| PLAT-03 | Phase 16 | Done (windows-optimized + mac-optimized pushed) |
+| PLAT-04 | Phase 16 | Done (per-branch quickstart README) |
 
 **v4 Coverage:**
 - v4 requirements: 12 total
 - Mapped to phases: 12 (Phase 13: 3 · Phase 14: 5 · Phase 15: 2 · Phase 16: 2)
+- Delivered: 10 Done · 2 Deferred (ACCEL-02/SAFE-02 — CUDA whisper not viable on Blackwell, see BENCHMARKS.md)
 - Unmapped: 0 ✓
 
 ---
