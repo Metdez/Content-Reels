@@ -104,9 +104,11 @@ def run(cmd: list[str], log: logging.Logger, desc: str, **kw) -> subprocess.Comp
         raise
 
 
-def stream_run(cmd: list[str], log: logging.Logger, desc: str, **kw) -> int:
+def stream_run(cmd: list[str], log: logging.Logger, desc: str, on_line=None, **kw) -> int:
     """Run a command, teeing combined stdout/stderr to the log line-by-line so
-    long-running stages show live progress. Returns exit code (raises on nonzero)."""
+    long-running stages show live progress. `on_line(text)` (optional) is called
+    with each raw line so callers can parse progress. Returns exit code (raises on
+    nonzero)."""
     log.info("▶ %s", desc)
     log.debug("cmd: %s", " ".join(map(str, cmd)))
     t = time.time()
@@ -115,6 +117,11 @@ def stream_run(cmd: list[str], log: logging.Logger, desc: str, **kw) -> int:
     last = ""
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip()
+        if on_line:
+            try:
+                on_line(line)
+            except Exception:
+                pass
         if line and line != last:
             log.info("  %s", line[:300])
             last = line

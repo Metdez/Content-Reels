@@ -70,6 +70,24 @@
   .step.error .dot{background:var(--err)}
   .step.done .st{color:var(--ok)} .step.running .st{color:var(--accent2)} .step.error .st{color:var(--err)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+  /* Master progress bar */
+  .master{margin:2px 0 18px}
+  .master .lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--mut);margin-bottom:7px}
+  .master .pct{font:700 14px ui-monospace,Menlo,monospace;color:var(--fg);font-variant-numeric:tabular-nums}
+  .master .barwrap{height:12px;background:#0c111a;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .master .fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    transition:width .45s cubic-bezier(.4,0,.2,1);box-shadow:0 0 12px rgba(109,94,252,.5)}
+  .master.complete .fill{background:linear-gradient(90deg,var(--ok),#5fd66f);box-shadow:0 0 12px rgba(63,185,80,.45)}
+  /* Per-section bars inside each step */
+  .step .bar{height:6px;background:#0c111a;border-radius:999px;overflow:hidden;margin-top:10px}
+  .step .bar i{display:block;height:100%;width:0;border-radius:999px;background:var(--accent2);
+    transition:width .45s cubic-bezier(.4,0,.2,1)}
+  .step.done .bar i{background:var(--ok)} .step.error .bar i{background:var(--err)}
+  .step.indet .bar{position:relative}
+  .step.indet .bar i{width:38%;background:linear-gradient(90deg,transparent,var(--accent2) 50%,transparent);animation:slide 1.15s infinite}
+  @keyframes slide{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+
   .banner{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:14px 16px;color:var(--mut);font-size:14px}
   .banner.err{color:#ff7b72;border-color:rgba(248,81,73,.4)}
 
@@ -270,17 +288,47 @@ function progressShell(){
   const m=document.getElementById('main');
   if(document.getElementById('steps')) return;
   m.innerHTML=`
-   <div class="steps" id="steps"></div>
+   <div class="card" style="padding:18px 20px">
+     <div class="master" id="master" style="margin-bottom:14px">
+       <div class="lbl"><span id="masterlbl">Starting…</span><span class="pct" id="masterpct">0%</span></div>
+       <div class="barwrap"><div class="fill" id="masterfill"></div></div>
+     </div>
+     <div class="steps" id="steps"></div>
+   </div>
    <details class="logs" open><summary>📜 Live log <span class="spin" id="spin"></span></summary><pre id="log">waiting for pipeline output…</pre></details>
    <div class="banner" id="status">Starting…</div>
    <h3 class="sec" id="clipsec" style="display:none">Clips</h3>
    <div class="clips" id="clips"></div>`;
 }
 const STEP_ICON={ingest:'📥',transcribe:'📝',select:'✨',render:'🎬'};
+const STEP_LABEL={ingest:'Ingesting',transcribe:'Transcribing',select:'Picking clips',render:'Rendering'};
+function stepPct(v){ if(v.status==='done')return 1; if(v.status==='running'||v.status==='error')return Math.max(0,Math.min(1,v.progress||0)); return 0; }
+function stepDetail(k,v){
+  if(v.error) return ' — '+esc(v.error);
+  if(k==='render'&&v.clips_total) return ` · ${v.clips_done||0}/${v.clips_total} clips`;
+  if(k==='transcribe'&&v.status==='running'&&v.progress>0) return ` · ${Math.round(v.progress*100)}%`;
+  if(v.clips!=null) return ' · '+v.clips+' clips';
+  return '';
+}
 function renderSteps(stages){
-  document.getElementById('steps').innerHTML=Object.entries(stages).map(([k,v])=>
-    `<div class="step ${v.status}"><div class="name"><span class="dot"></span>${STEP_ICON[k]||''} ${k}</div>
-     <div class="st">${v.status}${v.error?' — '+esc(v.error):(v.clips!=null?' · '+v.clips+' clips':'')}</div></div>`).join('');
+  document.getElementById('steps').innerHTML=Object.entries(stages).map(([k,v])=>{
+    const p=stepPct(v); const indet=(v.status==='running' && !(v.progress>0));
+    return `<div class="step ${v.status} ${indet?'indet':''}">
+       <div class="name"><span class="dot"></span>${STEP_ICON[k]||''} ${k}</div>
+       <div class="st">${v.status}${stepDetail(k,v)}</div>
+       <div class="bar"><i style="width:${indet?38:Math.round(p*100)}%"></i></div>
+     </div>`;
+  }).join('');
+}
+function renderMaster(d){
+  const mp=Math.round((d.progress||0)*100);
+  const fill=document.getElementById('masterfill'); if(fill) fill.style.width=mp+'%';
+  const pct=document.getElementById('masterpct'); if(pct) pct.textContent=mp+'%';
+  const lbl=document.getElementById('masterlbl'); const master=document.getElementById('master');
+  const done=d.stages.render && d.stages.render.status==='done';
+  const running=Object.entries(d.stages).find(([k,v])=>v.status==='running');
+  if(lbl) lbl.textContent = d.error?'Failed' : (done?'Complete 🎉' : (running?STEP_LABEL[running[0]]+'…':'Starting…'));
+  if(master) master.classList.toggle('complete',!!done);
 }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 
@@ -362,7 +410,7 @@ async function poll(){
   document.getElementById('src').textContent=d.source_name||JOB;
   if(d.awaiting_run){ if(!previewBuilt) buildPreview(d); return; }
   progressShell(); pollLog();
-  renderSteps(d.stages);
+  renderSteps(d.stages); renderMaster(d);
   const status=document.getElementById('status'); const spin=document.getElementById('spin');
   const running=Object.entries(d.stages).find(([k,v])=>v.status==='running');
   if(d.error){ status.className='banner err'; status.textContent='Failed: '+d.error; if(spin)spin.textContent=''; stop(); }

@@ -69,6 +69,26 @@ def test_parse_whisper_json_extracts_segments_and_words():
     assert [w["word"] for w in seg["words"]] == ["Hello", "world"]   # special token filtered
 
 
+def test_parse_whisper_progress():
+    assert t.parse_whisper_progress("whisper_print_progress_callback: progress =  42%") == 42
+    assert t.parse_whisper_progress("progress = 100%") == 100
+    assert t.parse_whisper_progress("nothing here") is None
+    assert t.parse_whisper_progress("progress = 250%") == 100      # clamped
+
+
+def test_set_progress_merges_without_resetting_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+    vid = tmp_path / "v.mp4"; vid.write_bytes(b"x")
+    job = Job.for_video(vid)
+    job.update_stage("render", "running", clips_total=6)
+    job.set_progress("render", 0.5, clips_done=3)
+    e = job.load_manifest()["stages"]["render"]
+    assert e["status"] == "running" and e["progress"] == 0.5
+    assert e["clips_done"] == 3 and e["clips_total"] == 6           # both merges preserved
+    job.set_progress("render", 2.0)                                 # clamps to 1.0
+    assert job.load_manifest()["stages"]["render"]["progress"] == 1.0
+
+
 def test_parse_silencedetect():
     stderr = (
         "[silencedetect @ 0x1] silence_start: 0\n"

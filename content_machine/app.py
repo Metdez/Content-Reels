@@ -140,6 +140,25 @@ def _overall_status(stages: dict) -> str:
     return "working…"
 
 
+# Master-bar weights — render is the long pole, transcribe second; ingest/select
+# are quick. Sum to 1.0 so the master bar reads as honest overall completion.
+_STAGE_WEIGHTS = {"ingest": 0.02, "transcribe": 0.40, "select": 0.08, "render": 0.50}
+
+
+def _stage_fraction(entry: dict) -> float:
+    st = entry.get("status")
+    if st == "done":
+        return 1.0
+    if st in ("running", "error"):
+        return max(0.0, min(1.0, float(entry.get("progress") or 0.0)))
+    return 0.0
+
+
+def _master_progress(stages: dict) -> float:
+    return round(sum(_STAGE_WEIGHTS.get(k, 0.0) * _stage_fraction(v)
+                     for k, v in stages.items()), 4)
+
+
 def _job_payload(job: Job) -> dict:
     m = job.load_manifest()
     stages = {s: m.get("stages", {}).get(s, {"status": "pending"}) for s in STAGES}
@@ -168,6 +187,7 @@ def _job_payload(job: Job) -> dict:
     source = next(job.data_dir.glob("source.*"), None)
     return {"job_id": job.job_id, "source_name": m.get("source_name", ""),
             "stages": stages, "clips": clips,
+            "progress": _master_progress(stages),
             "awaiting_run": bool(m.get("awaiting_run")),
             "source_url": media_url(source) if source else None,
             "source_dims": m.get("source_dims", [0, 0]),

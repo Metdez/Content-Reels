@@ -94,6 +94,31 @@ def test_run_job_persists_transforms_to_run_params(monkeypatch, tmp_path):
     assert rp["captions"] == "overlay"
 
 
+def test_master_progress_weighted(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    stages = {"ingest": {"status": "done"}, "transcribe": {"status": "done"},
+              "select": {"status": "done"}, "render": {"status": "running", "progress": 0.5}}
+    # 0.02 + 0.40 + 0.08 + 0.50*0.5 = 0.75
+    assert abs(app._master_progress(stages) - 0.75) < 1e-6
+    pending = {s: {"status": "pending"} for s in ("ingest", "transcribe", "select", "render")}
+    assert app._master_progress(pending) == 0.0
+    alldone = {s: {"status": "done"} for s in ("ingest", "transcribe", "select", "render")}
+    assert abs(app._master_progress(alldone) - 1.0) < 1e-6
+
+
+def test_job_payload_includes_master_progress(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    from content_machine.jobs import Job
+    _make_job(tmp_path, "eeee", {"ingest": {"status": "done"},
+              "transcribe": {"status": "running", "progress": 0.5},
+              "select": {"status": "pending"}, "render": {"status": "pending"}})
+    payload = app._job_payload(Job.load("eeee"))
+    # 0.02 + 0.40*0.5 = 0.22
+    assert abs(payload["progress"] - 0.22) < 1e-6
+
+
 def test_job_payload_merges_clips_and_rationale(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app

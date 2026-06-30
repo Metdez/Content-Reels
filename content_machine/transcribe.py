@@ -68,8 +68,20 @@ def build_whisper_cmd(audio: Path, model: Path, out_prefix: Path,
     return cmd
 
 
+# whisper.cpp -pp prints lines like "...progress = 42%" as it works.
+_WHISPER_PROGRESS_RE = re.compile(r"progress\s*=\s*(\d+)\s*%")
+
+
+def parse_whisper_progress(line: str) -> int | None:
+    """Pull the integer percent out of a whisper.cpp progress line, else None."""
+    m = _WHISPER_PROGRESS_RE.search(line or "")
+    if not m:
+        return None
+    return max(0, min(100, int(m.group(1))))
+
+
 def run_whisper(audio: Path, model: Path, out_prefix: Path,
-                language: str | None = None) -> Path:
+                language: str | None = None, on_progress=None) -> Path:
     config.require_tool(
         config.WHISPER_CLI,
         "Build whisper.cpp: bash scripts/setup.sh (clones + builds vendor/whisper.cpp)",
@@ -81,9 +93,16 @@ def run_whisper(audio: Path, model: Path, out_prefix: Path,
             f"  → bash vendor/whisper.cpp/models/download-ggml-model.sh {name}"
         )
     # stream_run tees whisper's -pp progress to the log so a long transcription
-    # shows live percentage instead of looking frozen.
+    # shows live percentage instead of looking frozen; on_line also feeds the
+    # numeric progress bar.
+    on_line = None
+    if on_progress:
+        def on_line(line):  # noqa: E306
+            pct = parse_whisper_progress(line)
+            if pct is not None:
+                on_progress(pct)
     stream_run(build_whisper_cmd(audio, model, out_prefix, language), log,
-               f"whisper transcription ({model.name})")
+               f"whisper transcription ({model.name})", on_line=on_line)
     return out_prefix.with_suffix(".json")
 
 
@@ -188,10 +207,18 @@ def transcribe(video_path: str | Path, model: str | None = None,
     job.update_stage("ingest", "done", source=str(src))
 
     # stage: transcribe
-    job.update_stage("transcribe", "running")
+    job.update_stage("transcribe", "running", progress=0.0)
     extract_audio(src, job.audio_path)
     model_p = config.model_path(model)
-    raw_json = run_whisper(job.audio_path, model_p, job.data_dir / "whisper", language)
+    _last_pct = [-1]
+
+    def _on_progress(pct: int) -> None:
+        if pct != _last_pct[0]:                 # throttle to whole-percent changes
+            _last_pct[0] = pct
+            job.set_progress("transcribe", pct / 100.0)
+
+    raw_json = run_whisper(job.audio_path, model_p, job.data_dir / "whisper",
+                           language, on_progress=_on_progress)
     transcript = parse_whisper_json(json.loads(Path(raw_json).read_text()))
 
     if vad:

@@ -275,17 +275,33 @@ def render_job(job_id_or_job, aspects: tuple[str, ...] = config.ASPECT_RATIOS,
     if not clips:
         raise ValueError("No clips to render — run select first.")
 
-    job.update_stage("render", "running")
+    total_units = max(1, len(clips) * len(aspects))
+    done_units = [0]
+    job.update_stage("render", "running", progress=0.0,
+                     clips_done=0, clips_total=len(clips))
     log.info("render: %d clip(s) x %d aspect(s), captions=%s",
              len(clips), len(aspects), caption_mode)
-    rendered = []
-    for i, c in enumerate(clips):
-        cb = (lambda i_: (lambda a, p: on_aspect_done(i_ + 1, a, p)))(i) if on_aspect_done else None
-        rendered.append(render_clip(job, c, i + 1, segments, aspects, x_offset,
-                                    caption_mode, transforms=transforms, on_aspect_done=cb))
-    log.info("render: done — %d clip(s)", len(rendered))
     manifest_path = job.clips_dir / "render.json"
-    manifest_path.write_text(json.dumps({"clips": rendered}, indent=2))
+    rendered = []
+
+    def make_cb(clip_no):
+        def cb(aspect, path):
+            done_units[0] += 1
+            job.set_progress("render", done_units[0] / total_units,
+                             clips_done=len(rendered), clips_total=len(clips))
+            if on_aspect_done:
+                on_aspect_done(clip_no, aspect, path)
+        return cb
+
+    for i, c in enumerate(clips):
+        rendered.append(render_clip(job, c, i + 1, segments, aspects, x_offset,
+                                    caption_mode, transforms=transforms,
+                                    on_aspect_done=make_cb(i + 1)))
+        # incremental manifest so the UI surfaces each clip the moment it's ready
+        manifest_path.write_text(json.dumps({"clips": rendered}, indent=2))
+        job.set_progress("render", done_units[0] / total_units,
+                         clips_done=len(rendered), clips_total=len(clips))
+    log.info("render: done — %d clip(s)", len(rendered))
     job.update_stage("render", "done", clips=len(rendered),
-                     aspects=list(aspects), captions=caption_mode)
+                     aspects=list(aspects), captions=caption_mode, progress=1.0)
     return manifest_path

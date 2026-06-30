@@ -113,5 +113,21 @@ class Job:
         self.save_manifest(manifest)
         return manifest
 
+    def set_progress(self, stage: str, progress: float | None = None, **extra) -> dict:
+        """Merge a progress fraction (0..1) + metadata into a stage WITHOUT
+        touching its status — for frequent updates during a running stage."""
+        if stage not in STAGES:
+            raise ValueError(f"Unknown stage: {stage}")
+        manifest = self.load_manifest()
+        stages = manifest.setdefault("stages", {})
+        entry = stages.get(stage) or {"status": "running"}
+        if progress is not None:
+            entry["progress"] = max(0.0, min(1.0, float(progress)))
+        entry.update(extra)
+        entry["updated_at"] = time.time()
+        stages[stage] = entry
+        self.save_manifest(manifest)
+        return entry
+
     def stage_status(self, stage: str) -> str:
         return self.load_manifest().get("stages", {}).get(stage, {}).get("status", "pending")
