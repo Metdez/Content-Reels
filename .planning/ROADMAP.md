@@ -100,10 +100,10 @@ ffmpeg + prebuilt whisper.cpp), adds an **interactive crop-preview step before t
 (upload → preview the 9:16/1:1 crop with a live slider → Run), polishes the UI, and guarantees the
 rendered clips carry **audio**. Driven by the author's switch to a Windows machine.
 
-- [ ] **Phase 5: Windows Cross-Platform Port** - App runs end-to-end on Windows: vendored ffmpeg/ffprobe + prebuilt `whisper-cli.exe` + model, OS-agnostic binary/font resolution, `setup.ps1`
-- [ ] **Phase 6: Interactive Crop Preview Before Run** - Upload no longer auto-starts; a preview page shows the source video with a draggable crop-box overlay (9:16/1:1) and a Run button that starts the pipeline with the chosen offset
-- [ ] **Phase 7: UI Polish + Live Logs** - Cleaner, more legible index + job pages; clear stage progress; readable live log panel
-- [ ] **Phase 8: Render Audio + Caption Fit + Review Reframe** - Every rendered clip keeps its audio in all 3 ratios and after re-frame; captions fit + sit in the safe area in 9:16/1:1/16:9; review-time crop slider (live box + re-render) works reliably
+- [x] **Phase 5: Windows Cross-Platform Port** - App runs end-to-end on Windows: vendored ffmpeg/ffprobe + prebuilt `whisper-cli.exe` + model, OS-agnostic binary/font resolution, `setup.ps1`
+- [x] **Phase 6: Interactive Crop Preview Before Run** - Upload no longer auto-starts; a preview page shows the source video with a draggable crop-box overlay (9:16/1:1) and a Run button that starts the pipeline with the chosen offset
+- [x] **Phase 7: UI Polish + Live Logs** - Cleaner, more legible index + job pages; clear stage progress; readable live log panel
+- [x] **Phase 8: Render Audio + Caption Fit + Review Reframe** - Every rendered clip keeps its audio in all 3 ratios and after re-frame; captions fit + sit in the safe area in 9:16/1:1/16:9; review-time crop slider (live box + re-render) works reliably
 
 ### Phase 5: Windows Cross-Platform Port
 **Goal**: The full upload→transcribe→select→render→download flow works on Windows 11 with no package manager: static ffmpeg/ffprobe and prebuilt whisper.cpp vendored under `vendor/`, `config.py` resolves `.exe` binaries + vendored paths, captions fall back to Windows fonts, and `scripts/setup.ps1` reproduces the toolchain.

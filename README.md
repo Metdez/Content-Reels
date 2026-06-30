@@ -5,14 +5,27 @@ it transcribes locally, Claude picks the best clip-worthy moments, and each is c
 into **9:16, 1:1, and 16:9** with captions. Nothing leaves your machine; clip
 selection runs on your **Claude Code subscription** (no API key, no per-token cost).
 
-Built on macOS / Apple Silicon.
+Runs on **macOS / Apple Silicon** and **Windows 11**.
 
 ```
-upload ─▶ transcribe (whisper.cpp) ─▶ select (claude -p) ─▶ render (ffmpeg) ─▶ review & download
-                                  all local · data/<job_id>/
+upload ─▶ preview & set crop ─▶ transcribe (whisper.cpp) ─▶ select (claude -p) ─▶ render (ffmpeg) ─▶ review · reframe · download
+                                              all local · data/<job_id>/
 ```
 
 ## Quick start
+
+### Windows (no package manager needed)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # vendors static ffmpeg + prebuilt whisper.cpp + model + venv
+.venv\Scripts\python.exe -m content_machine.cli serve        # http://127.0.0.1:8000
+```
+
+`setup.ps1` downloads a static **full** ffmpeg build and the prebuilt `whisper-blas-bin-x64`
+release into `vendor/` (gitignored) — no Homebrew, cmake, or compiler required. Needs
+**Claude Code logged in** (`claude login`) for the selection step.
+
+### macOS / Apple Silicon
 
 ```bash
 bash scripts/setup.sh          # ffmpeg + cmake, build whisper.cpp (Metal), model, venv

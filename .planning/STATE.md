@@ -1,13 +1,13 @@
 ---
 gsd_state_version: '1.0'
-status: in_progress
+status: complete
 milestone: v2
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 8
   total_plans: 8
-  completed_plans: 4
-  percent: 50
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -22,11 +22,18 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 ## Current Position
 
 Milestone: v2 — Cross-Platform + Interactive Crop Preview (autonomous)
-Phase: 5 of 8 (Windows Cross-Platform Port) — in progress
-Status: v1.0 complete; v2 toolchain installed on Windows (vendored ffmpeg + whisper-cli.exe + base.en model + venv)
-Last activity: 2026-06-29 — branched feat/windows-port-crop-preview; setup.ps1 added; config.py OS-agnostic resolution
+Phase: 8 of 8 complete — milestone delivered
+Status: Phases 5-8 built + verified live on Windows via browser. Full EnlayeParis.mp4 (13:39) run end-to-end: upload→preview→run→transcribe→6 clips→18 outputs (all aac audio, correct dims), captions fit all ratios, reframe re-renders with audio.
+Last activity: 2026-06-29 — branch feat/windows-port-crop-preview; commits 0889a5c (P5), 4839aef (P6-8)
 
-Progress: [██████░░░░] 50% (4/8 phases)
+Progress: [██████████] 100% (8/8 phases)
+
+### Verified live (v2, Windows 11, real binaries + browser)
+- P5 Windows port: transcribe(whisper-cli.exe) + select(claude.CMD) + render(ffmpeg) end-to-end; 28 tests pass
+- P6 crop preview: upload stages → preview crop box+slider (matches compute_crop) → Run propagates x_offset
+- P7 UI: studio redesign, stage stepper, clean live log (UTF-8)
+- P8 audio+captions+reframe: 18/18 outputs have aac audio; uniform captions fit 9:16/1:1/16:9; reframe re-renders left/right with audio intact
+- Full EnlayeParis.mp4: 6 clips selected with strong hooks, all 3 ratios each, thumbnails in review grid
 
 ### How to run
 - `bash scripts/setup.sh` (one-time), then `content-machine serve` → http://127.0.0.1:8000

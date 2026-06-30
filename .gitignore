@@ -25,3 +25,11 @@ venv/
 /logs/*.log
 /logs/*.log.*
 /logs/jobs/*.log
+
+# Playwright MCP scratch (screenshots, uploaded test copies)
+/.playwright-mcp/
+# Local UI test screenshots
+/*.png
+# Local test videos in repo root
+/*.mp4
+/*.mov

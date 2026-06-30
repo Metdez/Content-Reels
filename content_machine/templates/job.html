@@ -214,7 +214,7 @@ function clipEl(c){
     `<span class="tab ${i===0?'active':''}" data-src="${c.outputs[a]}" data-clip="${c.index}" data-a="${a}">${a}</span>`).join("");
   const dls=ASPECTS.filter(a=>c.outputs[a]).map(a=>`<a href="/download/${JOB}/${c.index}/${a}">↓ ${a}</a>`).join("");
   return `<div class="clip" id="clip${c.index}">
-    <video src="${first}" controls preload="metadata" id="vid${c.index}"></video>
+    <video src="${first}" ${c.thumb?`poster="${c.thumb}"`:''} controls preload="metadata" id="vid${c.index}"></video>
     <div class="tabs">${tabs}</div>
     <div class="title">${esc(c.title)||('Clip '+c.index)}</div>
     <div class="score">${c.score!=null?('★ '+c.score):''}${c.captions?(' · '+c.captions+' captions'):''}</div>
