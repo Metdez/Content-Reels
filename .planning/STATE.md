@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
-  percent: 14
+  completed_phases: 3
+  total_plans: 3
+  completed_plans: 3
+  percent: 21
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 25 of 36 — next up (HTTP API Integration Tests); Phases 23–24 complete
+Phase: 26 of 36 — next up (Reliability: atomic manifests + locking); Phases 23–25 complete
 Plan: —
-Status: Phase 24 (Backend Unit Coverage) shipped — +92 tests across config/cli/logging_setup/render/captions/select/transcribe; coverage 64.2%→89.2%; 156 tests pass; ruff clean. 5 bugs characterized + logged for fix phases. Running autonomously.
-Last activity: 2026-06-30 — Phase 24 complete (QA-06…11)
+Status: Phase 25 (HTTP API integration) shipped — tests/test_api.py +22; app.py 74.5%→85.4%, overall 92.2%; 178 tests pass; ruff clean. Next: the FIX phases (26–28) where the characterized bugs get flipped to correct. Running autonomously.
+Last activity: 2026-06-30 — Phase 25 complete (API-01…05)
 
 ### v6 progress
 
@@ -41,6 +41,10 @@ Last activity: 2026-06-30 — Phase 24 complete (QA-06…11)
 3. **VAL-02 (P28):** no retry — one bad/timed-out chunk aborts whole multi-chunk selection (`select.py:217`).
 4. **P28 minor:** `select.py:129` `proc.stderr[:500]` None-risk (latent).
 5. **P30 note:** `stream_run` swallows `on_line` exceptions + raises `CalledProcessError` with no captured output (`logging_setup.py:123-124, 131`) — buggy progress parser/error detail invisible.
+6. **P27:** `/upload` reverts `ingest` stage to `pending` — `update_stage("ingest","done")` then a trailing `save_manifest(stale_manifest)` clobbers it (`app.py:349-355`).
+7. **P28:** VAL-05 `/media` mount serves `job.json`/`transcript.json`/`audio.wav` verbatim (`app.py:64`).
+8. **P28 minor:** dead empty-filename 400 guard (Starlette returns 422 first) (`app.py:319-320`).
+9. **Note (by design):** traversal name neutralized to basename (303), not rejected 400 (`app.py:42-49`).
 
 ### Verified live (v5.1, Windows 11, real NVENC + Playwright)
 
