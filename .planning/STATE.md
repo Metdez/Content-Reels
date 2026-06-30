@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v5
-milestone_name: — Editing UX Revamp
+milestone: v5.1
+milestone_name: — Quick-Crop Parity & Render Visibility
 status: complete
-last_updated: "2026-06-30T13:05:00.000Z"
+last_updated: "2026-06-30T15:10:00.000Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 3
@@ -20,14 +20,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Milestone v5 — Editing UX Revamp (background re-render + live progress, direct-manipulation framing, flow polish). Phases 17–19. v1.0–v4 complete and verified live.
+**Current focus:** Milestone v5.1 — Quick-Crop Parity & Render Visibility (Phases 20–22) complete. Brought the job-page Quick-crop modal to full editor parity and made re-render legible. v1.0–v5 complete and verified live.
 
 ## Current Position
 
-Phase: 19 of 19 complete — milestone v5 delivered
+Phase: 22 of 22 complete — milestone v5.1 delivered (recorded retroactively)
 Plan: —
-Status: All 3 v5 phases (17–19) built + verified live on Windows. 57 tests pass. Editor re-render is non-blocking with live per-aspect progress + queue, framing is direct-manipulation (scroll/drag) + magnifier, and the flow has an always-visible state pill. Working on branch feat/windows-port-crop-preview (not merged to main).
-Last activity: 2026-06-30 — Phase 19 complete (EDITUX-07); milestone v5 complete
+Status: All 3 v5.1 phases (20–22) shipped + verified live on Windows with real NVENC via Playwright; 58 tests pass. The Quick-crop modal (`✂ Quick crop` on each clip card) now has zoom + Y + X with a live preview, scroll-zoom + drag-pan, a non-blocking re-render driven by `/edit` + `/rerender-status` (progress bar + per-aspect status), and a live `/log` tail; finished previews stop re-buffering (poll-in-place). Commits on main: 6f94246 (P20), fd5c298 (P21), 148fa06 (P22).
+Last activity: 2026-06-30 — Phases 20–22 complete (EDITUX-08…12); milestone v5.1 complete
+
+### Verified live (v5.1, Windows 11, real NVENC + Playwright)
+
+- P20 poll-in-place: editor 600ms re-render poll + job-page 2.5s clips poll now patch the DOM in place; finished `<video>` elements are created once and never refetched, so they stop spinning forever; active aspect tab preserved across reconcile.
+- P21 Quick-crop parity + visibility: modal gained per-aspect zoom + Position-Y + Position-X with a live output-preview canvas (reuses `computeCrop`/`drawBox`/`drawOut`), seeded from saved transforms. Re-render switched from the old blocking `/reframe` to non-blocking `/edit` + `/rerender-status` poll: progress bar + %, per-aspect queued/rendering/done rows, and a live `/api/job/{id}/log` tail in the modal. Live test: set zoom 2.0 / x +26% / y +16% → 9:16 rendered then 1:1,16:9 promoted from queued → 0→100% → all done ✓ → card refreshed in place; transforms persisted to edit.json. Fixed two bugs found in testing: outputs lagging the done-transition, and a reconcile-sig clear that rebuilt an un-cache-busted `<video>` (now a shared-token cache-bust on stable paths).
+- P22 direct manipulation: scroll-wheel zooms (`zoom*exp(-deltaY*0.0016)`, clamped 1–3×) and dragging pans (grab-the-image mapping) on the modal preview, sliders kept synced. Live: wheel 1→1.60×, drag +60/+40px → x=−14% y=−36% with correct direction + slider sync.
 
 ### Verified live (v5, Windows 11, real ffmpeg/NVENC + browser)
 

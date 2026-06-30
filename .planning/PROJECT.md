@@ -8,19 +8,24 @@ A local-first webapp that turns a long video (talk, webinar, podcast) into short
 
 Drop in one video and get back several genuinely good, caption-burned clips in multiple aspect ratios — without uploading the source anywhere or paying per-token API costs.
 
-## Current Milestone: v5 — Editing UX Revamp
+## Current Milestone: v5.1 — Quick-Crop Parity & Render Visibility
 
-**Goal:** Make the clip editor feel responsive and legible — a clip re-render runs in the background with a live per-aspect progress bar (never a frozen page), framing is set by direct manipulation (scroll-to-zoom + drag-to-pan) on each aspect's live preview plus a magnifier to inspect detail, and the whole edit→crop flow has clear states so the user is never left wondering "is it still rendering?"
+**Status:** Complete (shipped 2026-06-30) — recorded retroactively. Continues v5's editing-UX work.
 
-**Target features:**
-- Background re-render: the editor's "Apply & re-render" spawns the render on a background thread (like the main pipeline) and returns immediately; the page stays fully interactive while it runs.
-- Live editor progress: a per-aspect progress bar in the editor (queued / rendering / done / error), driven by the existing `job.update_stage`/`set_progress` writes into `job.json`, polled by the editor; thumbnails swap in as each ratio finishes.
-- Edit queue: changing framing/trim again while a render runs queues the next render instead of blocking or losing work.
-- Direct-manipulation framing: scroll-wheel zooms the crop and dragging pans, directly on each aspect preview (mirrors `render.compute_crop`); sliders kept as a fallback; copy-to-all + reset preserved; pixel-parity with the renderer.
-- Preview magnifier: zoom the preview canvas itself to inspect detail without changing the output framing.
-- Flow polish: clear idle/dirty/rendering/done/error states across the edit→crop flow, verified live in the browser.
+**Goal:** Bring the job-page **Quick-crop** modal to full clip-editor parity and make re-render state visible everywhere it was previously a frozen, silent wait.
 
-**Key context:** "Must not break" still outranks speed; local-only; do not merge to main without asking; test live in the browser (Playwright on EnlayeParis.mp4) + ffprobe + pytest each phase. Root cause of the reported pain: `save_clip_edit` (app.py) calls `render.rerender_one` **synchronously**, so the HTTP request blocks until all 3 ratios finish — the page freezes with no feedback even though `rerender_one` already writes render progress nobody polls. The two crop-math definitions (JS `computeCrop` in editor.html and Python `render.compute_crop`) must stay in lockstep — divergence is the recurring risk, gated by the pixel-parity criterion.
+**Target features (all delivered):**
+- Quick-crop framing parity: the Quick-crop modal gains zoom + Position-Y (alongside X), per-aspect framing, and a live WYSIWYG output-preview canvas — reusing the same crop math (`computeCrop`/`drawBox`/`drawOut`) as the full editor and the pre-run preview.
+- Non-blocking Quick-crop re-render: the modal posts per-aspect transforms to the existing non-blocking `/edit` endpoint and polls `/rerender-status` instead of the old blocking `/reframe`, so the UI stays interactive.
+- Render visibility in the modal: a progress bar + %, per-aspect queued/rendering/done/error rows, and a live tail of `/api/job/{id}/log` — the user always sees what's happening during the long render.
+- Direct-manipulation in Quick-crop: scroll-wheel zooms and drag pans the preview (mirrors the full editor), with the sliders kept as a synced fallback.
+- Poll hardening: editor and job-page polls update in place so finished `<video>` elements stop re-buffering from zero (a major source of "rendering takes forever").
+
+**Key context:** Pure frontend — no backend changes; reused the v5 `/edit` + `/rerender-status` + `/log` infrastructure. The Quick-crop modal was the old pre-v5 path (X-offset only, blocking `/reframe`, zero feedback), which is what the user actually experienced as "the edit feature is just not working." Output paths are stable (only file content changes on re-render), so the card refresh is a shared-token cache-bust, NOT a reconcile-sig clear (which would rebuild an un-busted `<video>`). All verified live on Windows with real NVENC via Playwright; 58 tests pass.
+
+### Previous milestone
+
+- **v5 — Editing UX Revamp (Phases 17–19):** Shipped. Background re-render + live editor progress + queue, direct-manipulation framing + magnifier, edit-flow state pill + readable errors. (EDITUX-01…07)
 
 ## Requirements
 
@@ -79,9 +84,10 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 | v4 GPU accel = encode-only offload (NVENC/VideoToolbox) + GPU whisper, behind a startup probe with automatic libx264/CPU fallback | "Must not break" > speed; mixing hw-decode with sw-filters breaks the filtergraph; a probe+fallback makes a missing GPU/driver a non-event | ✓ Resolved (verified on Windows) |
 | v4 Windows ffmpeg pinned to BtbN 7.1 (not master) | Master ffmpeg needs NVENC driver ≥610; author's driver is 591.74 — 7.1 NVENC verified working on it, no driver gamble | ✓ Resolved (verified live) |
 | v4 ships two thin platform branches off one shared auto-detecting core (not divergent codebases) | The Mac branch can't be tested here; a shared probe+fallback core means worst case = CPU like today, so it can't break | ✓ Resolved |
-| v5 editor re-render runs on a background thread + editor polls `job.json` render progress (reuse the P11 progress mechanism), instead of the synchronous blocking call | Synchronous `rerender_one` froze the editor with no feedback; a background thread + polling makes it non-blockable and legible without new infra | — Pending |
-| v5 framing = direct manipulation (scroll-zoom + drag-pan) on the live preview, keeping sliders as fallback, with one shared crop-math definition | Sliders are fiddly; direct manipulation is the expected video-editor UX. JS↔Python crop-math divergence is the risk — gated by pixel-parity | — Pending |
-| v5 edit re-renders queue (single in-flight, next change runs after) rather than running concurrently | "Must not break" → one render at a time avoids clobbering partial outputs / racing the manifest; the user never loses an edit | — Pending |
+| v5 editor re-render runs on a background thread + editor polls `job.json` render progress (reuse the P11 progress mechanism), instead of the synchronous blocking call | Synchronous `rerender_one` froze the editor with no feedback; a background thread + polling makes it non-blockable and legible without new infra | ✓ Shipped (v5 P17) |
+| v5 framing = direct manipulation (scroll-zoom + drag-pan) on the live preview, keeping sliders as fallback, with one shared crop-math definition | Sliders are fiddly; direct manipulation is the expected video-editor UX. JS↔Python crop-math divergence is the risk — gated by pixel-parity | ✓ Shipped (v5 P18; extended to Quick-crop in v5.1 P22) |
+| v5 edit re-renders queue (single in-flight, next change runs after) rather than running concurrently | "Must not break" → one render at a time avoids clobbering partial outputs / racing the manifest; the user never loses an edit | ✓ Shipped (v5 P17) |
+| v5.1 Quick-crop reuses the `/edit` + `/rerender-status` pipeline rather than the old blocking `/reframe`; card refresh is a shared-token cache-bust, not a reconcile-sig clear | Reuses proven v5 infra (no backend change); paths are stable so clearing the sig would rebuild an un-busted `<video>` and undo the reload | ✓ Shipped (v5.1 P21) |
 
 ## Evolution
 
@@ -101,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-30 — milestone v5 started (editing UX revamp: background re-render + live progress, direct-manipulation framing + magnifier, edit-flow polish)*
+*Last updated: 2026-06-30 — milestone v5.1 recorded (Quick-crop parity & render visibility: zoom+Y+live preview, non-blocking render with progress bar + per-aspect status + live log, scroll/drag direct manipulation, poll-in-place hardening). Shipped retroactively; v5 complete.*

@@ -435,7 +435,62 @@ All 7 v5 requirements mapped to exactly one phase. No orphans, no duplicates.
 
 **Total: 7/7 mapped ✓**
 
+## v5.1 Phases — Quick-Crop Parity & Render Visibility (Phases 20–22)
+
+Continues numbering after v5 (Phases 17–19). Recorded retroactively — all three phases shipped 2026-06-30. Pure frontend; reuses the v5 `/edit` + `/rerender-status` + `/log` pipeline (no backend change).
+
+### Phase 20 — Poll-in-place Hardening ✓ Complete
+
+**Goal:** Finished render previews stop re-buffering forever; polls update the DOM in place instead of rebuilding `<video>` elements every tick.
+
+**Requirements:** EDITUX-12 (partial — poll-in-place portion)
+
+**Success criteria:**
+1. The 600ms editor re-render poll patches per-aspect status/preview in place; a finished ratio's `<video>` is created once and never refetched, so it doesn't spin forever. ✓
+2. The 2.5s job-page poll reconciles the clips grid in place (append/rebuild-on-change), preserving loaded videos and the active aspect tab. ✓
+
+**Commit:** `6f94246`
+
+### Phase 21 — Quick-Crop Full Framing + Non-blocking Render with Live Progress & Logs ✓ Complete
+
+**Goal:** The Quick-crop modal matches the full editor — zoom + Y + X with a live preview — and re-renders non-blocking with a progress bar, per-aspect status, and a live log.
+
+**Requirements:** EDITUX-08, EDITUX-10, EDITUX-11
+
+**Success criteria:**
+1. The modal exposes per-aspect zoom + Position-Y + Position-X with a live WYSIWYG output-preview canvas, seeded from saved transforms. ✓
+2. Re-render posts per-aspect transforms to the non-blocking `/edit` endpoint and polls `/rerender-status`: progress bar + %, per-aspect queued/rendering/done rows; the button never freezes. ✓
+3. A live `/api/job/{id}/log` tail streams inside the modal during the render. ✓
+4. On done, the clip card + ratio tabs cache-bust (shared token, stable paths) to show the new framing; verified live on Windows with real NVENC; 58 tests pass. ✓
+
+**Commit:** `fd5c298`
+
+### Phase 22 — Quick-Crop Direct Manipulation ✓ Complete
+
+**Goal:** Scroll-zoom + drag-pan on the Quick-crop preview, mirroring the full editor.
+
+**Requirements:** EDITUX-09
+
+**Success criteria:**
+1. Scroll-wheel zooms (`zoom*exp(-deltaY*0.0016)`, clamped 1–3×) and dragging pans (grab-the-image mapping), mutating only `MTF.{zoom,x,y}` with the sliders kept synced. ✓
+2. Verified live: wheel 1→1.60×, drag +60/+40px → x=−14% y=−36% with correct direction + slider sync. ✓
+
+**Commit:** `148fa06`
+
+## v5.1 Coverage
+
+All 5 v5.1 requirements mapped to exactly one phase. No orphans, no duplicates.
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 20. Poll-in-place Hardening | EDITUX-12 | 1 |
+| 21. Quick-Crop Framing + Live Progress + Logs | EDITUX-08, EDITUX-10, EDITUX-11 | 3 |
+| 22. Quick-Crop Direct Manipulation | EDITUX-09 | 1 |
+
+**Total: 5/5 mapped ✓**
+
 ---
 *Roadmap created: 2026-06-29 — granularity: coarse, 4 phases, sequential numbering*
 *Updated: 2026-06-30 — v3 milestone appended (Phases 9–12: per-aspect zoom/crop + clip editor + progress bars); 15/15 v3 requirements mapped*
 *Updated: 2026-06-30 — v5 milestone appended (Phases 17–19: background re-render + live progress, direct-manipulation framing + magnifier, flow polish); 7/7 v5 requirements mapped*
+*Updated: 2026-06-30 — v5.1 milestone appended (Phases 20–22: poll-in-place hardening, Quick-crop parity + live progress/logs, direct manipulation); 5/5 v5.1 requirements mapped; recorded retroactively (all shipped)*

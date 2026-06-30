@@ -133,6 +133,21 @@ Active milestone — Editing UX Revamp (background re-render + live progress, di
 
 - [x] **EDITUX-07**: The edit→crop flow has clear, always-visible states (idle / unsaved changes / rendering / done / error) so the user is never left guessing whether a render is still running, and errors surface a readable message instead of a silent hang
 
+## v5.1 Requirements
+
+Quick-Crop Parity & Render Visibility — bring the job-page Quick-crop modal to full editor parity and make re-render legible. Phases 20–22. Pure frontend; reuses the v5 `/edit` + `/rerender-status` + `/log` pipeline. Shipped 2026-06-30.
+
+### Quick-Crop Framing Parity
+
+- [x] **EDITUX-08**: The Quick-crop modal lets the user set per-aspect zoom and Position-Y (in addition to Position-X) with a live WYSIWYG output preview, using the same crop math as the full editor (no X-offset-only limitation)
+- [x] **EDITUX-09**: The Quick-crop modal can pan/zoom the preview by direct manipulation — scroll-wheel zooms, dragging pans — with the sliders kept as a synced fallback (mirrors the full editor's behavior)
+
+### Quick-Crop Render Visibility
+
+- [x] **EDITUX-10**: Quick-crop re-render is non-blocking (posts to `/edit`, polls `/rerender-status`) and shows a progress bar with overall % plus per-aspect queued/rendering/done/error rows — never a frozen "Re-rendering…" button
+- [x] **EDITUX-11**: The Quick-crop modal streams a live log tail (`/api/job/{id}/log`) during the render so the user can see what's happening at every breakpoint
+- [x] **EDITUX-12**: On completion the clip card and every ratio tab refresh in place to show the new render immediately (shared-token cache-bust on stable paths), and finished `<video>` elements stop re-buffering from zero (editor + job-page polls update in place)
+
 ## Out of Scope
 
 Explicitly excluded. Documented to prevent scope creep.
@@ -247,6 +262,22 @@ Explicitly excluded. Documented to prevent scope creep.
 - Delivered: 7 Done ✓
 - Unmapped: 0 ✓
 
+### v5.1 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| EDITUX-08 | Phase 21 | Done |
+| EDITUX-09 | Phase 22 | Done |
+| EDITUX-10 | Phase 21 | Done |
+| EDITUX-11 | Phase 21 | Done |
+| EDITUX-12 | Phase 20 | Done |
+
+**v5.1 Coverage:**
+- v5.1 requirements: 5 total
+- Mapped to phases: 5 (Phase 20: 1 · Phase 21: 3 · Phase 22: 1)
+- Delivered: 5 Done ✓
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-30 — v5 requirements added (7 reqs, EDITUX → Phases 17–19)*
+*Last updated: 2026-06-30 — v5.1 requirements added (5 reqs, EDITUX-08…12 → Phases 20–22, all Done, recorded retroactively)*
