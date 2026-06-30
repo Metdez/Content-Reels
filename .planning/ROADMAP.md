@@ -231,12 +231,105 @@ Plans:
 
 ---
 
+## Milestone v4 — Cross-Platform Hardware Acceleration
+
+v3 gave creative control; v4 makes it fast. The two slow stages — render (~50% of the wait) and
+transcribe (~40%) — leave the GPU idle on both OSes (`render.py` hardcodes `libx264`; Windows whisper
+is a CPU BLAS build). v4 offloads **encode** to the GPU (NVENC on Windows / VideoToolbox on Mac) and
+**transcription** to the GPU (CUDA whisper on Windows; Mac is already Metal), behind a startup
+**probe + automatic CPU fallback** so it is structurally impossible to break. The spine is a shared
+auto-detecting `hwaccel` core (Phase 13), enabled and benchmarked on Windows (Phase 14), tuned for
+macOS via the same probe/fallback (Phase 15), then split into two thin platform branches (Phase 16).
+"Must not break" outranks raw speed throughout: encode-only (no hw-decode), serial GPU sessions,
+libx264 fallback on any failure.
+
+- [ ] **Phase 13: Shared Hardware-Accel Core + Render Encoder Fallback** - `hwaccel.py` probes encoders once and returns the best profile; `render.py` encodes with it and transparently falls back to `libx264` on any failure; NVENC-verified on Windows, x264 parity preserved
+- [ ] **Phase 14: Windows GPU Enablement + Benchmark Harness** - `setup.ps1` vendors the pinned NVENC-capable ffmpeg 7.1 + CUDA cuBLAS whisper (BLAS fallback); transcribe uses the RTX GPU with CPU fallback; benchmark harness records CPU-vs-GPU deltas + ffprobe validation
+- [ ] **Phase 15: macOS Tuning (VideoToolbox + Metal defaults)** - VideoToolbox encode profile + Metal whisper defaults + `setup.sh`/README, relying on the Phase 13 probe + fallback so the untestable Mac path cannot break
+- [ ] **Phase 16: Branch Split + READMEs + Push** - Fork `windows-optimized` and `mac-optimized` off the shared core (differing only in defaults/setup/README), each with a dead-simple quickstart; push both to GitHub
+
+### Phase 13: Shared Hardware-Accel Core + Render Encoder Fallback
+**Goal**: Introduce `content_machine/hwaccel.py` that probes the available video encoders once at startup (lavfi null-encode, exit-code verdict, cached) and returns the best encoder profile (codec + quality-matched flags); wire `render.py` to encode with the chosen profile on every render path and transparently fall back to `libx264` on any failure. Encode-only — `compute_crop` and all CPU filters are untouched. Verified live on Windows with NVENC; x264 output parity preserved when the GPU path is disabled.
+**Depends on**: v3 (existing render pipeline: `build_render_cmd`/`render_clip`)
+**Requirements**: ACCEL-01, SAFE-01, SAFE-03
+**Success Criteria** (what must be TRUE):
+  1. `hwaccel` probes `h264_nvenc`/`h264_videotoolbox` via a cached lavfi null-encode and returns a profile object (codec + flags); on this Windows machine it selects the `nvenc` profile (`-preset p5 -rc vbr -cq 21 -b:v 0 -pix_fmt yuv420p`)
+  2. `build_render_cmd` emits the selected encoder's flags on BOTH the no-caption path and the `filter_complex` caption path (and `build_overlay_cmd`); a real EnlayeParis clip renders in all 3 aspects via NVENC with valid h264 + an audio stream + `+faststart` (ffprobe-verified)
+  3. A forced encoder failure (unavailable/bogus encoder) makes the render transparently re-run the SAME filtergraph with `libx264`, producing a valid output — never missing, silent, or corrupt
+  4. With the GPU path disabled (env/flag), output matches today's `libx264 -preset veryfast -crf 20` behavior; all existing render tests stay green; new unit tests cover profile selection + the fallback wrapper
+  5. `pytest` green on Windows
+**Plans**: TBD
+
+Plans:
+- [ ] 13-01: TBD
+
+**UI hint**: no (engine/CLI change; speed shows up in the existing progress bars)
+
+**Pitfalls to bake in**: nvenc has no `-crf`/`-preset veryfast` — use `-rc vbr -cq`; the probe MUST be cached (don't spawn an ffmpeg probe per clip); keep the Phase 8 audio guarantee — the fallback must re-run the SAME filtergraph (captions + `-map 0:a?` + volume) with x264, not silently drop captions or audio; `-af volume` stays illegal with `-filter_complex` (existing handling preserved); detect mid-encode failure by nonzero exit, not just probe; leave decode + all filters on CPU (encode-only).
+
+### Phase 14: Windows GPU Enablement + Benchmark Harness
+**Goal**: Make Windows actually use the GPU end-to-end and prove it. `setup.ps1` vendors the pinned NVENC-capable ffmpeg 7.1 (verified to init NVENC on driver 591.74, unlike the master build) and the CUDA cuBLAS whisper build (self-bundled DLLs), keeping the BLAS build as a fallback; `transcribe` uses the CUDA whisper when the GPU initializes and falls back to CPU otherwise; and a benchmark harness records CPU-vs-GPU wall-time for render and transcribe with ffprobe validation of every output.
+**Depends on**: Phase 13
+**Requirements**: ACCEL-02, SAFE-02, BENCH-01, BENCH-02, PLAT-01
+**Success Criteria** (what must be TRUE):
+  1. `setup.ps1` idempotently vendors BtbN ffmpeg 7.1 (NVENC works on the installed driver) and `whisper-cublas-12.4.0` binaries alongside the BLAS fallback; re-running setup is a no-op
+  2. Transcription runs on the RTX 5060 via CUDA whisper (`ggml_cuda_init` logs a CUDA device); if CUDA init is absent/fails, it falls back to the CPU whisper build automatically
+  3. A benchmark script reports render + transcribe wall-time for CPU vs GPU on a known input and prints the before/after deltas (GPU faster for both)
+  4. The benchmark validates every output with ffprobe (codec, dimensions, audio stream present, not corrupt) and confirms GPU and CPU outputs are equivalently valid
+  5. The recorded before/after numbers are committed; `pytest` green
+**Plans**: TBD
+
+Plans:
+- [ ] 14-01: TBD
+
+**UI hint**: no
+
+**Pitfalls to bake in**: the cuBLAS zip bundles `cudart`/`cublas` DLLs — flatten them next to `whisper-cli.exe`; Blackwell PTX-JIT adds a one-time warmup — measure steady-state, not first-run; iterate benchmarks on a short slice but validate full-res outputs; make sure `config.WHISPER_CLI` resolves the CUDA binary and the CUDA DLLs don't collide with the BLAS build; the ffmpeg pin is load-bearing (master fails NVENC on driver 591.74).
+
+### Phase 15: macOS Tuning (VideoToolbox + Metal defaults)
+**Goal**: Tune the shared core for Apple Silicon — add the VideoToolbox encode profile and confirm Metal whisper defaults, with `setup.sh`/README adjustments — relying entirely on the Phase 13 probe + fallback so the Mac path (untestable here) cannot break: worst case it runs `libx264`/CPU exactly like today.
+**Depends on**: Phase 13 (core), Phase 14 (benchmark harness reused)
+**Requirements**: ACCEL-03, PLAT-02
+**Success Criteria** (what must be TRUE):
+  1. The encoder profile table includes a `videotoolbox` profile (`h264_videotoolbox -q:v 62 -b:v 0 -allow_sw 1`) selected when the probe detects it on macOS
+  2. `setup.sh` idempotently provides VideoToolbox-capable ffmpeg (Homebrew) + Metal whisper (already `-DGGML_METAL=1`)
+  3. The probe + fallback are platform-agnostic and unit-tested with a stubbed probe (no Mac hardware needed); a Mac with absent/failed VideoToolbox falls back to `libx264`
+  4. Code-reviewed for Windows-only assumptions (paths, `.exe`, env); `pytest` green (cross-platform tests don't assume a GPU)
+**Plans**: TBD
+
+Plans:
+- [ ] 15-01: TBD
+
+**UI hint**: no
+
+**Pitfalls to bake in**: can't run on Mac here — rely on the probe's exit-code contract + stubbed unit tests; `-q:v` constant quality is Apple-Silicon-only (the probe covers Intel/absence); `-allow_sw 1` lets VideoToolbox fall back to its SW encoder before our libx264 fallback even triggers; don't hardcode `/opt/homebrew` beyond what `setup.sh` already does; keep all platform divergence behind the profile table + setup script, not scattered conditionals.
+
+### Phase 16: Branch Split + READMEs + Push
+**Goal**: Split the tested shared core into the two thin platform branches — `windows-optimized` and `mac-optimized` — differing only in platform defaults, setup script, and README, each with a dead-simple one-command quickstart, and push both to `origin`. Branch from the current working branch (latest code), not stale `main`; do not merge to `main`.
+**Depends on**: Phase 14 (Windows verified), Phase 15 (Mac tuned)
+**Requirements**: PLAT-03, PLAT-04
+**Success Criteria** (what must be TRUE):
+  1. `windows-optimized` and `mac-optimized` branches exist off the shared core; the diff between them is limited to platform defaults + setup script + README
+  2. Each branch's README has a one-command setup and a one-command run for that platform, accurate to that branch
+  3. Both branches are pushed to `origin` (github.com/Metdez/Content-Reels) and visible on GitHub
+  4. A clean checkout of each branch sets up and runs per its README (Windows verified locally; Mac steps dry-validated for correctness)
+**Plans**: TBD
+
+Plans:
+- [ ] 16-01: TBD
+
+**UI hint**: no
+
+**Pitfalls to bake in**: do NOT merge to `main` (standing constraint); fork from the current working branch (`feat/windows-port-crop-preview`, latest code), not stale `main`; keep the shared core byte-identical on both branches so future fixes cherry-pick cleanly; the README must match what `setup` actually does — test the Windows one end-to-end; push uses `origin` over HTTPS (the user is authenticated).
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16
 
-**Active milestone: v3 (Phases 9–12).** Phases 1–8 complete (v1.0 + v2.0, verified live).
+**Active milestone: v4 (Phases 13–16).** Phases 1–12 complete (v1.0 + v2.0 + v3, verified live).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|

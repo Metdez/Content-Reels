@@ -8,14 +8,18 @@ A local-first webapp that turns a long video (talk, webinar, podcast) into short
 
 Drop in one video and get back several genuinely good, caption-burned clips in multiple aspect ratios — without uploading the source anywhere or paying per-token API costs.
 
-## Current Milestone: v3 — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
+## Current Milestone: v4 — Cross-Platform Hardware Acceleration
 
-**Goal:** Give the user real creative control over every clip — independent zoom/pan framing per aspect ratio (before AND after the run), a focused non-destructive per-clip editor, and honest master + per-section progress bars — so post-processing stops being a "stuck waiting on a black screen" experience.
+**Goal:** Make the two slow stages fast by putting the idle GPU to work — offload video encode to the GPU (NVENC on Windows / VideoToolbox on Mac) and transcription to the GPU (CUDA whisper on Windows; Mac is already Metal) — behind a runtime-probe + automatic CPU fallback so it is structurally impossible to break, shipped as two thin platform-tuned branches off one shared auto-detecting core.
 
 **Target features:**
-- Per-aspect transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}` replacing the single scalar `x_offset`; each clip can override; live CSS preview defers the ffmpeg render until the user commits.
-- Focused clip editor (`/job/{id}/clip/{idx}/edit`): trim (snap-to-sentence), reframe per aspect (zoom/pan + copy-to-all), caption text/timing edits + toggle, audio keep/mute/volume — non-destructive `edit.json`, per-aspect re-render, back-to-grid.
-- Master + per-section progress bars (transcribe % from whisper-cli output, render per-aspect-per-clip counts, weighted master); clips appear as each finishes; visually screenshot-verified.
+- `hwaccel.py`: probe each candidate encoder once at startup, cache the verdict, return the best encoder profile (nvenc / videotoolbox / x264) with quality-matched flags; encode-only (CPU decode + CPU filters), aspect ratios encoded serially.
+- Encoder fallback wired into `render.py`: every GPU encode transparently re-runs on `libx264` on any failure — an output file is never missing or corrupt; the "always has audio" + faststart guarantees hold.
+- GPU transcription: Windows vendors the prebuilt CUDA (cuBLAS) whisper build with auto-fallback to the CPU BLAS build; Mac stays Metal.
+- Benchmark/eval harness: measures CPU-vs-GPU wall-time for render and transcribe and validates every output with ffprobe; records before/after numbers proving the speedup and the fallback's validity.
+- Two thin platform branches (`windows-optimized`, `mac-optimized`) differing only in defaults/setup/README, each with a dead-simple one-command quickstart; pushed to GitHub.
+
+**Key context:** "Must not break" outranks raw speed. Verified live on the author's machine: the bundled bleeding-edge BtbN master ffmpeg fails NVENC on driver 591.74 (needs ≥610); pinning BtbN ffmpeg 7.1 makes NVENC work with no driver change. Encode-only (no `-hwaccel` decode) and serial GPU sessions are deliberate safety choices. The untestable Mac branch inherits the tested probe+fallback, so worst case it runs CPU exactly like today.
 
 ## Requirements
 
@@ -59,7 +63,7 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 - **Tech / local-first**: Everything runs on the author's Mac (darwin) — no source video leaves the machine. — Privacy + cost control + "runs locally" is the whole point.
 - **Tech / clip-selection**: Clip selection runs through the Claude Code subscription headless (`claude -p`), NOT an API key. — Author's explicit choice. **Accepted risk:** headless calls draw from the same 5-hour/weekly subscription limits (the separate credit pool was paused June 2026) and the Consumer Terms restrict scripted access; mitigated by caching selection per transcript hash. No API-key fallback in v1 by decision.
 - **Dependencies (final)**: whisper.cpp (transcription) + ffmpeg (cut/crop/assemble) + hyperframes (animated captions). video-use dropped as a dependency (pattern reference only). — Resolved after research verification.
-- **Platform**: macOS, local toolchain (ffmpeg, Node/Python as needed). — Author's environment.
+- **Platform**: cross-platform — Windows 11 (author's primary: Ryzen 9 + RTX 5060 Laptop, 16GB) and macOS Apple Silicon (16GB). Local toolchain (vendored ffmpeg + whisper.cpp, Python). — Author works on both; v4 tunes each for its GPU.
 
 ## Key Decisions
 
@@ -71,6 +75,9 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 | Engine = whisper.cpp + ffmpeg + hyperframes (captions); video-use dropped to reference | Verified in research: ffmpeg is the real cutter; video-use breaks local-first; hyperframes fits animated captions | ✓ Resolved |
 | v1 reframe = center crop + manual x-offset; segment-level captions; snap cuts to sentence boundaries | Research: speaker-tracking needs CV (defer); word-level karaoke needs forced alignment (defer) | — Pending |
 | Local-first, no cloud, no LinkedIn auto-post in v1 | Privacy, cost, and scope control | — Pending |
+| v4 GPU accel = encode-only offload (NVENC/VideoToolbox) + GPU whisper, behind a startup probe with automatic libx264/CPU fallback | "Must not break" > speed; mixing hw-decode with sw-filters breaks the filtergraph; a probe+fallback makes a missing GPU/driver a non-event | ✓ Resolved (verified on Windows) |
+| v4 Windows ffmpeg pinned to BtbN 7.1 (not master) | Master ffmpeg needs NVENC driver ≥610; author's driver is 591.74 — 7.1 NVENC verified working on it, no driver gamble | ✓ Resolved (verified live) |
+| v4 ships two thin platform branches off one shared auto-detecting core (not divergent codebases) | The Mac branch can't be tested here; a shared probe+fallback core means worst case = CPU like today, so it can't break | ✓ Resolved |
 
 ## Evolution
 
@@ -90,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 — milestone v3 started (per-aspect zoom/crop + clip editor + progress bars)*
+*Last updated: 2026-06-30 — milestone v4 started (cross-platform hardware acceleration: GPU encode + GPU transcribe with probe+fallback)*

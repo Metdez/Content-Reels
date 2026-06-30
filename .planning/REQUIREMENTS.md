@@ -85,6 +85,34 @@ Active milestone — Per-aspect zoom/crop + focused clip editor + progress bars.
 - [x] **PROG-03**: Each clip/aspect appears in the review grid the moment it finishes rendering, not only at the end
 - [x] **PROG-04**: Progress bars are visually verified to look good (Playwright screenshots at multiple progress states)
 
+## v4 Requirements
+
+Active milestone — Cross-Platform Hardware Acceleration (GPU encode + GPU transcribe, probe + fallback). Phases 13–16.
+
+### GPU Acceleration
+
+- [ ] **ACCEL-01**: Video encode is offloaded to the GPU when a usable encoder is detected (NVENC on Windows, VideoToolbox on Mac) — encode-only (CPU decode + CPU filters), with the three aspect ratios encoded serially; rendered clips remain valid in 9:16/1:1/16:9
+- [ ] **ACCEL-02**: On Windows, transcription runs on the RTX GPU via a CUDA (cuBLAS) whisper build when the GPU is available
+- [ ] **ACCEL-03**: On macOS, encode uses VideoToolbox and transcription uses Metal as the platform-tuned defaults
+
+### Reliability & Fallback
+
+- [ ] **SAFE-01**: Any GPU encode failure (encoder init or mid-encode error) transparently falls back to CPU `libx264` so the output file is never missing or corrupt, with audio stream and `+faststart` intact
+- [ ] **SAFE-02**: If GPU whisper fails to initialize, transcription falls back to the CPU whisper build automatically
+- [ ] **SAFE-03**: On hardware with no usable GPU, the pipeline runs exactly as before on CPU with no new errors — the GPU path is purely additive, and with GPU disabled the x264 output matches today's behavior
+
+### Benchmark & Validation
+
+- [ ] **BENCH-01**: A benchmark script reports render and transcribe wall-time for CPU vs GPU on a known input and records the before/after deltas
+- [ ] **BENCH-02**: The benchmark validates every output with ffprobe (codec, dimensions, audio stream present, not corrupt), confirming GPU and CPU outputs are equivalently valid
+
+### Platform Packaging
+
+- [ ] **PLAT-01**: Windows setup idempotently vendors the driver-compatible pinned ffmpeg (NVENC-capable on the installed driver) and the CUDA whisper build
+- [ ] **PLAT-02**: macOS setup idempotently provides VideoToolbox-capable ffmpeg + a Metal whisper build
+- [ ] **PLAT-03**: `windows-optimized` and `mac-optimized` branches exist off the shared auto-detecting core (differing only in defaults/setup/README) and are pushed to GitHub
+- [ ] **PLAT-04**: Each platform branch ships a dead-simple README: one-command setup and one-command run for that platform
+
 ## Out of Scope
 
 Explicitly excluded. Documented to prevent scope creep.
@@ -97,6 +125,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | API key as the default selection path | Author chose subscription headless; API key is a deferred fallback only |
 | video-use as a dependency | Breaks local-first (ElevenLabs cloud); used only as a pattern reference |
 | Full multi-track timeline NLE (splice/reorder/transitions) | v3 editor is a focused per-clip tool; a real NLE is unreliable on a local ffmpeg pipeline and overkill for short vertical clips |
+| GPU-accelerated DECODE (`-hwaccel cuda/videotoolbox`) | Mixing hw-decode with the CPU crop/scale/overlay filtergraph causes format-conversion breakage; decode of short clips isn't the bottleneck — v4 is encode-only by decision |
+| Parallel multi-clip / multi-aspect GPU encoding | The RTX 5060 has a single NVENC engine (parallel ≈ no gain) and adds concurrency risk to the job runner; "must not break" → encode serially |
+| AV1 / HEVC output as default | h264 is the safe, universally-compatible social format; AV1/HEVC compatibility is inconsistent across platforms |
+| NVIDIA driver upgrade to unlock newer ffmpeg | Pinning a driver-compatible ffmpeg avoids a risky driver change; the latest ffmpeg's NVENC needs driver ≥610 vs the installed 591.74 |
 
 ## Traceability
 
@@ -153,6 +185,28 @@ Explicitly excluded. Documented to prevent scope creep.
 - Mapped to phases: 15 (Phase 9: 3 · Phase 10: 2 · Phase 11: 4 · Phase 12: 6)
 - Unmapped: 0 ✓
 
+### v4 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| ACCEL-01 | Phase 13 | Pending |
+| SAFE-01 | Phase 13 | Pending |
+| SAFE-03 | Phase 13 | Pending |
+| ACCEL-02 | Phase 14 | Pending |
+| SAFE-02 | Phase 14 | Pending |
+| BENCH-01 | Phase 14 | Pending |
+| BENCH-02 | Phase 14 | Pending |
+| PLAT-01 | Phase 14 | Pending |
+| ACCEL-03 | Phase 15 | Pending |
+| PLAT-02 | Phase 15 | Pending |
+| PLAT-03 | Phase 16 | Pending |
+| PLAT-04 | Phase 16 | Pending |
+
+**v4 Coverage:**
+- v4 requirements: 12 total
+- Mapped to phases: 12 (Phase 13: 3 · Phase 14: 5 · Phase 15: 2 · Phase 16: 2)
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-30 — v3 traceability confirmed against ROADMAP (15/15 → Phases 9–12)*
+*Last updated: 2026-06-30 — v4 requirements added (12 reqs, ACCEL/SAFE/BENCH/PLAT → Phases 13–16)*
