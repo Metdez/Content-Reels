@@ -153,10 +153,10 @@ preview (Phase 10) and the clip editor (Phase 12) are both live-preview surfaces
 math, and the progress system (Phase 11) runs orthogonally over the existing job runner. Scope is
 locked: a focused per-clip tool, not a multi-track NLE.
 
-- [ ] **Phase 9: Per-Aspect Transform Model + Crop Math** - Replace scalar `x_offset` with a per-aspect `{zoom, x, y}` transform; `compute_crop` gains zoom + vertical pan; old `x_offset` runs still render; unit tests
-- [ ] **Phase 10: Pre-Run Preview Upgrade (live per-aspect zoom/pan)** - Per-aspect zoom + x/y pan controls on the preview page with instant CSS-transform preview mirroring the Python crop math; chosen transforms become the job's run defaults
-- [ ] **Phase 11: Progress System (master + per-section bars)** - Real backend progress numbers (transcribe % from whisper-cli, render per-aspect-per-clip counts); weighted master + per-section bars; clips surface as each finishes; Playwright-verified
-- [ ] **Phase 12: Focused Clip Editor** - Full-screen `/job/{id}/clip/{idx}/edit`: trim (snap-to-sentence), per-aspect reframe (+copy-to-all), caption text/timing + toggle, audio keep/mute/volume; non-destructive `edit.json`; per-aspect re-render; back-to-grid
+- [x] **Phase 9: Per-Aspect Transform Model + Crop Math** - Replace scalar `x_offset` with a per-aspect `{zoom, x, y}` transform; `compute_crop` gains zoom + vertical pan; old `x_offset` runs still render; unit tests
+- [x] **Phase 10: Pre-Run Preview Upgrade (live per-aspect zoom/pan)** - Per-aspect zoom + x/y pan controls on the preview page with instant CSS-transform preview mirroring the Python crop math; chosen transforms become the job's run defaults
+- [x] **Phase 11: Progress System (master + per-section bars)** - Real backend progress numbers (transcribe % from whisper-cli, render per-aspect-per-clip counts); weighted master + per-section bars; clips surface as each finishes; Playwright-verified
+- [x] **Phase 12: Focused Clip Editor** - Full-screen `/job/{id}/clip/{idx}/edit`: trim (snap-to-sentence), per-aspect reframe (+copy-to-all), caption text/timing + toggle, audio keep/mute/volume; non-destructive `edit.json`; per-aspect re-render; back-to-grid
 
 ### Phase 9: Per-Aspect Transform Model + Crop Math
 **Goal**: Replace the single scalar `x_offset` with a per-aspect transform `{zoom≥1, x∈[-1,1], y∈[-1,1]}` and teach `render.compute_crop` to apply zoom (a tighter-than-fit crop window) plus vertical pan, while still accepting old `x_offset` run params so existing jobs and manifests keep rendering. This is the data-model + math foundation that the live previews in Phases 10 and 12 build on — get the crop arithmetic right once, in Python, with tests.

@@ -8,9 +8,18 @@ selection runs on your **Claude Code subscription** (no API key, no per-token co
 Runs on **macOS / Apple Silicon** and **Windows 11**.
 
 ```
-upload ─▶ preview & set crop ─▶ transcribe (whisper.cpp) ─▶ select (claude -p) ─▶ render (ffmpeg) ─▶ review · reframe · download
+upload ─▶ preview & frame each ratio (zoom/pan) ─▶ transcribe ─▶ select (claude -p) ─▶ render (ffmpeg)
+   ─▶ live master + per-stage progress ─▶ review ─▶ edit clip (trim · reframe · captions · audio) ─▶ download
                                               all local · data/<job_id>/
 ```
+
+**Per-aspect framing** — set an independent zoom + x/y pan for 9:16, 1:1, and 16:9,
+previewed live (WYSIWYG, no render) before the run and editable per clip after.
+**Clip editor** (`/job/<id>/clip/<n>/edit`) — trim with snap-to-sentence, reframe
+per ratio, edit caption text/timing, mute/adjust audio; saved non-destructively to
+`edit.json` and re-rendered per aspect (only changed ratios re-encode).
+**Honest progress** — a weighted master bar plus per-stage bars (live whisper %
+and per-clip render counts); clips appear in the grid as each finishes.
 
 ## Quick start
 
@@ -78,8 +87,10 @@ data/              your videos, transcripts, clips (gitignored, local-only)
   are rendered as PNG overlays, not burned text. Works with any ffmpeg.
 - **hyperframes captions** are wired (`--captions hyperframes`) but need a properly
   scaffolded composition to fully animate; the default overlay captions are the reliable path.
-- **Reframe** is center-crop + manual x-offset. Speaker-tracking auto-reframe and
-  word-level karaoke captions are deferred (see `.planning/REQUIREMENTS.md` v2).
+- **Reframe** is a manual per-aspect transform — independent zoom + x/y pan for
+  each ratio, set live before the run and per clip in the editor (no CV needed).
+  Speaker-tracking auto-reframe and word-level karaoke captions are still deferred
+  (see `.planning/REQUIREMENTS.md`).
 
 ## Logs
 

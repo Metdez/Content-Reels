@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3
 milestone_name: — Per-Aspect Zoom/Crop + Clip Editor + Progress Bars
-status: planning
-last_updated: "2026-06-30T02:05:00.000Z"
+status: complete
+last_updated: "2026-06-30T02:30:00.000Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 4
+  total_plans: 4
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -24,10 +24,18 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: Not started — v3 roadmap created (Phases 9–12), ready to plan Phase 9
+Phase: 12 of 12 complete — milestone v3 delivered
 Plan: —
-Status: Roadmap defined (4 v3 phases mapped, 15/15 requirements covered)
-Last activity: 2026-06-30 — v3 milestone appended to ROADMAP.md
+Status: All 4 v3 phases (9–12) built + verified live on Windows via browser + ffprobe. 45 tests pass.
+Last activity: 2026-06-30 — commits bd71b34 (P9), e4eac1a (P10), 51094e8 (P11), 2d27f3f (P12)
+
+Progress: [██████████] 100% (4/4 phases · 15/15 requirements)
+
+### Verified live (v3, Windows 11, real binaries + browser + ffprobe)
+- P9 transform model: compute_crop gains zoom + x/y pan; back-compat (8 prior render tests unchanged); 6 new unit tests. JS mirror is pixel-accurate (9:16 zoom2 → 202×360px).
+- P10 pre-run preview: per-aspect zoom/pan with live WYSIWYG output frame; copy-to-all; slack-aware slider disable; transforms persist to run_params. Browser-verified pixel-parity with the renderer.
+- P11 progress: weighted master bar + per-section bars; whisper-% transcribe; render per-aspect-per-clip counts; indeterminate select; screenshotted at 4 states (transcribe 35%, select indeterminate, render 2/6=67%, complete 100%).
+- P12 clip editor: /job/{id}/clip/{idx}/edit — trim (snap-to-sentence), per-aspect reframe (+copy-to-all), caption text/timing edit + toggle, audio mute/volume; non-destructive edit.json; per-aspect re-render. EnlayeParis clip 1 trimmed 21.74s→13.78s across all 3 ratios (all aac, vol 0.8), mute drops audio stream, captions auto-re-derive, edit.json round-trips.
 
 ### v3 phase map (Phases 9–12)
 

@@ -21,7 +21,9 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 
 ### Validated
 
-(None yet — ship to validate)
+- Per-aspect zoom + x/y pan framing, previewed live before render and editable per clip (v3, P9–P10, P12)
+- Focused clip editor — trim, reframe, captions, audio — non-destructive `edit.json`, per-aspect re-render (v3, P12)
+- Honest master + per-section progress bars with live whisper % and per-clip render counts (v3, P11)
 
 ### Active
 
@@ -32,10 +34,6 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 - [ ] Burn captions into clips from the transcript timing
 - [ ] Store all transcripts and clips locally, browsable by source video
 - [ ] Review suggested clips in the UI and download the ones you want
-- [ ] Set independent zoom + pan framing per aspect ratio, previewed live before render (v3)
-- [ ] Edit each clip in a focused editor — trim, reframe, captions, audio — non-destructively (v3)
-- [ ] See honest master + per-section progress while a job runs (v3)
-
 ### Out of Scope
 
 - Direct publishing/scheduling to LinkedIn — v1 produces files; posting is manual (revisit later)
