@@ -38,7 +38,12 @@
   .cropbox{position:absolute;border:2px solid var(--accent2);box-shadow:0 0 0 9999px rgba(0,0,0,.55);border-radius:2px;
     pointer-events:none;transition:.05s left,.05s top,.05s width,.05s height}
   .cropbox .tag{position:absolute;top:5px;left:5px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;line-height:1.4}
-  .outframe{position:relative;overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);width:100%}
+  .outframe{position:relative;overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);width:100%;
+    cursor:grab;touch-action:none;user-select:none}
+  .outframe.grabbing{cursor:grabbing}
+  .stagegrid.mag{grid-template-columns:1fr}
+  .stagegrid.mag .cropwrap{max-width:340px}
+  .pvhint{font-size:11px;color:var(--mut);margin-top:6px}
   .outframe video{position:absolute;will-change:left,top,width,height}
   .outframe canvas{display:block;width:100%;height:100%}
   .outframe .rt{position:absolute;top:8px;right:8px;z-index:2;background:rgba(10,12,16,.8);color:var(--accent2);
@@ -117,6 +122,7 @@ let trimIn=0, trimOut=0, winStart=0, winEnd=0, dur=0;
 let caps=[], capsOn=true, capsEdited=false, audio={mute:false,volume:1};
 let dirtyClip=false, dirtyAspects=new Set();
 let sw=0, sh=0, BOUNDS=[];
+let MAG=1;   // preview magnifier (inspect zoom) — does NOT change output framing
 
 /* ---- crop math: mirrors render.compute_crop (zoom + x/y pan) ---- */
 function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
@@ -133,7 +139,7 @@ function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
 /* Draw the cropped region of the single source video onto the output canvas so
    the preview plays in sync with the source (no freezing on frame 0). */
 function drawOut(frame,cv,video,aspect,t){
-  const [tw,th]=aspect.split(":").map(Number); const CAP=420;
+  const [tw,th]=aspect.split(":").map(Number); const CAP=420*MAG;
   // Size from the STABLE parent width, never frame.clientWidth — reading the
   // frame's own (mutated) width fed a clamp↔unclamp oscillation that flashed.
   const avail=(frame.parentElement&&frame.parentElement.clientWidth)||frame.clientWidth||0;
@@ -214,9 +220,10 @@ function buildUI(){
            <div><p class="cap">Source — drag sliders to reframe</p>
              <div class="cropwrap" id="cw"><video id="srcvid" src="${D.source_url}" muted playsinline preload="metadata"></video>
                <div class="cropbox" id="box"><span class="tag" id="tag">9:16</span></div></div></div>
-           <div><p class="cap">Output preview</p>
+           <div><p class="cap">Output preview <span style="flex:1"></span><button class="mini" id="magbtn" style="padding:3px 9px">🔍 Inspect 1×</button></p>
              <div class="outframe" id="of"><span class="rt" id="rt">9:16</span>
-               <canvas id="outcv"></canvas></div></div>
+               <canvas id="outcv"></canvas></div>
+             <p class="pvhint">Scroll to zoom · drag to pan · 🔍 to magnify</p></div>
          </div>
          <div class="sliderrow"><span>Zoom</span><input type="range" id="zoom" min="1" max="3" step="0.05"><span class="val" id="zv">1.00×</span></div>
          <div class="sliderrow"><span>Position X</span><input type="range" id="ox" min="-1" max="1" step="0.02"><span class="val" id="xv">center</span></div>
@@ -296,6 +303,41 @@ function wire(){
   srcvid.addEventListener('loadedmetadata',()=>{ try{ srcvid.currentTime=Math.max(0.05,trimIn); }catch(e){} redraw(); });
   startOutLoop($('of'),outcv,srcvid,()=>aspect,()=>TF[aspect]);
   window.addEventListener('resize',redraw);
+
+  /* ---- direct manipulation on the live preview: scroll = zoom, drag = pan ---- */
+  const of=$('of');
+  of.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const t=TF[aspect];
+    const z=t.zoom*Math.exp(-e.deltaY*0.0016);           // smooth, cursor-agnostic
+    t.zoom=Math.max(1,Math.min(3,Math.round(z*100)/100));
+    dirtyAspects.add(aspect); sync(); redraw(); renderTabs(); markDirty();
+  },{passive:false});
+  let pan=null;
+  of.addEventListener('pointerdown',e=>{
+    if(e.button!==0) return;
+    const t=TF[aspect], c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
+    pan={px:e.clientX,py:e.clientY,x0:t.x,y0:t.y,c,fw:outcv.width||1,fh:outcv.height||1};
+    of.classList.add('grabbing'); try{of.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault();
+  });
+  of.addEventListener('pointermove',e=>{
+    if(!pan) return;
+    const {c,fw,fh,x0,y0}=pan, t=TF[aspect];
+    const ddx=e.clientX-pan.px, ddy=e.clientY-pan.py;     // grab-the-image mapping (source px)
+    if(c.sx>0) t.x=Math.max(-1,Math.min(1, x0 - 2*ddx*c.w/(fw*c.sx)));
+    if(c.sy>0) t.y=Math.max(-1,Math.min(1, y0 - 2*ddy*c.h/(fh*c.sy)));
+    dirtyAspects.add(aspect); sync(); redraw(); renderTabs(); markDirty();
+  });
+  function endPan(){ if(pan){ pan=null; of.classList.remove('grabbing'); } }
+  of.addEventListener('pointerup',endPan); of.addEventListener('pointercancel',endPan); of.addEventListener('lostpointercapture',endPan);
+
+  /* ---- magnifier: enlarge the preview to inspect detail (output framing unchanged) ---- */
+  $('magbtn').addEventListener('click',()=>{
+    MAG = MAG>=2 ? 1 : (MAG>=1.5 ? 2 : 1.5);
+    $('magbtn').textContent='🔍 Inspect '+MAG+'×';
+    document.querySelector('.stagegrid').classList.toggle('mag', MAG>1);
+    redraw();
+  });
 
   /* ---- trim ---- */
   const track=$('track');

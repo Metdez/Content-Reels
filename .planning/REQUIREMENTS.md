@@ -126,8 +126,8 @@ Active milestone — Editing UX Revamp (background re-render + live progress, di
 
 ### Direct-Manipulation Framing
 
-- [ ] **EDITUX-05**: The user can zoom the crop framing with the scroll-wheel and pan it by dragging, directly on each aspect's live preview; the result mirrors `render.compute_crop` exactly (pixel-parity) and the existing sliders stay as a fallback
-- [ ] **EDITUX-06**: The user can magnify the preview canvas itself (an inspect zoom) to see fine detail while framing, without changing the clip's output framing
+- [x] **EDITUX-05**: The user can zoom the crop framing with the scroll-wheel and pan it by dragging, directly on each aspect's live preview; the result mirrors `render.compute_crop` exactly (pixel-parity) and the existing sliders stay as a fallback
+- [x] **EDITUX-06**: The user can magnify the preview canvas itself (an inspect zoom) to see fine detail while framing, without changing the clip's output framing
 
 ### Flow Clarity
 
@@ -237,8 +237,8 @@ Explicitly excluded. Documented to prevent scope creep.
 | EDITUX-02 | Phase 17 | Done |
 | EDITUX-03 | Phase 17 | Done |
 | EDITUX-04 | Phase 17 | Done |
-| EDITUX-05 | Phase 18 | Pending |
-| EDITUX-06 | Phase 18 | Pending |
+| EDITUX-05 | Phase 18 | Done |
+| EDITUX-06 | Phase 18 | Done |
 | EDITUX-07 | Phase 19 | Pending |
 
 **v5 Coverage:**

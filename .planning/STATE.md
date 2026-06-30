@@ -24,12 +24,14 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 17 of 19 complete
+Phase: 18 of 19 complete
 Plan: —
-Status: Phase 17 (Background Re-render + Live Editor Progress) built + verified live in the browser on EnlayeParis.mp4 (clip 1). Next: Phase 18 (direct-manipulation framing + magnifier).
-Last activity: 2026-06-30 — Phase 17 complete (EDITUX-01..04)
+Status: Phases 17–18 built + verified live in the browser on EnlayeParis.mp4 (clip 1). Next: Phase 19 (edit-flow polish + full live walkthrough).
+Last activity: 2026-06-30 — Phase 18 complete (EDITUX-05..06)
 
 ### Verified live (v5, Windows 11, real ffmpeg/NVENC + browser)
+
+- P18 direct-manipulation framing + magnifier: on the output preview, scroll-wheel zooms the crop (`exp(-deltaY)` smoothing, clamped 1–3×) and dragging pans it with a grab-the-image mapping (`x -= 2·ddx·cw/(fw·sx)`), only mutating `TF.{zoom,x,y}` so the existing sliders stay a live fallback. Verified live: wheel 1→1.62×, drag set x=0.14/y=0.34 with correct direction + slider sync. **Pixel-parity confirmed** — JS `computeCrop(1920,1080,'9:16',0.14,1.6,0.34)`=`{x:878,y:271,w:380,h:674}` equals Python `compute_crop(...)`=`(w380,h674,x878,y271)`. A `🔍 Inspect` button cycles MAG 1→1.5→2× (CAP=420·MAG, stage goes single-column) to enlarge the preview for detail without touching the output transform (verified: x/y/zoom unchanged after magnify). 56 tests pass.
 
 - P17 background re-render: `save_clip_edit` now enqueues onto a per-clip worker thread (`_RERENDER` tracker + `_enqueue_rerender` + `_rerender_worker`) and returns immediately — the editor never blocks. New `GET /clip/{idx}/rerender-status` exposes per-aspect state; `editor.html` polls it (600ms), shows an overall bar + per-aspect cards (queued/rendering/done/error) and drops each rendered output `<video>` in place as its ratio finishes. Aspects encode serially (1 NVENC engine): one "rendering", rest "queued", promoted on each completion. An edit made mid-render queues (single in-flight + 1 pending slot) and runs after — verified live: all-3 render showed `9:16 rendering · 1:1,16:9 queued` → progressed one-by-one; a second edit fired mid-flight set `queued:true` and ran after gen-1, nothing lost. `rerender_one` gained an `on_aspect_done` passthrough. 56 tests pass (+queue regression test).
 
