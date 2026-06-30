@@ -29,6 +29,21 @@ log = get_logger(__name__)
 OUTPUT_DIMS = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}
 ASPECT_SLUG = {"9:16": "9x16", "1:1": "1x1", "16:9": "16x9"}
 
+# Quiet sources (screen recordings, low mic gain) come through faithfully but
+# near-inaudible. Normalize every clip to the EBU R128 streaming target so output
+# is consistently loud. ponytail: single-pass loudnorm; two-pass if levels drift.
+AUDIO_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
+
+
+def audio_chain(vol: float | None) -> str:
+    """Audio filter chain shared by the -af and -filter_complex paths: optional
+    volume scale, then loudness normalization. `vol` None means leave gain as-is."""
+    parts = []
+    if vol is not None:
+        parts.append(f"volume={vol:.3f}")
+    parts.append(AUDIO_FILTER)
+    return ",".join(parts)
+
 # Per-aspect framing transform. zoom>=1 (1.0 = max-fit crop, larger = tighter);
 # x/y in [-1,1] pan across whatever horizontal/vertical slack the aspect+zoom create.
 DEFAULT_TRANSFORM = {"zoom": 1.0, "x": 0.0, "y": 0.0}
@@ -119,9 +134,10 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
                      encoder: dict | None = None) -> list[str]:
     """ffmpeg: cut + crop/scale, optionally compositing time-gated caption PNGs.
 
-    Audio: carried through by default; `mute` drops it (-an), `volume` (!=1.0)
-    scales it (folded into the filtergraph on the caption path, where -af is
-    illegal alongside -filter_complex).
+    Audio: carried through by default and loudness-normalized (EBU R128) so quiet
+    sources stay audible; `mute` drops it (-an), `volume` (!=1.0) scales it ahead
+    of the normalize step. The audio chain folds into the filtergraph on the
+    caption path, where -af is illegal alongside -filter_complex.
 
     Video is encoded with `encoder` (a hwaccel profile: NVENC/VideoToolbox/x264);
     decode + all filters stay on the CPU. Defaults to the x264 CPU profile so
@@ -139,9 +155,7 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
         if mute:
             cmd += ["-an"]
         else:
-            cmd += ["-map", "0:a?"]
-            if vol is not None:
-                cmd += ["-af", f"volume={vol:.3f}"]
+            cmd += ["-map", "0:a?", "-af", audio_chain(vol)]
     else:
         for e in png_events:
             cmd += ["-loop", "1", "-i", str(e["png"])]
@@ -154,8 +168,8 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
             )
             prev = nxt
         amap = "0:a?"
-        if not mute and vol is not None:           # -af is illegal with -filter_complex
-            parts.append(f"[0:a]volume={vol:.3f}[outa]")
+        if not mute:           # -af is illegal with -filter_complex; fold audio into the graph
+            parts.append(f"[0:a]{audio_chain(vol)}[outa]")
             amap = "[outa]"
         cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]"]
         if mute:
@@ -178,7 +192,7 @@ def build_overlay_cmd(base: Path, overlay: Path, out: Path,
     return [
         config.FFMPEG, "-y", "-i", str(base), "-i", str(overlay),
         "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto[v]",
-        "-map", "[v]", "-map", "0:a?", *enc, "-c:a", "aac",
+        "-map", "[v]", "-map", "0:a?", *enc, "-af", AUDIO_FILTER, "-c:a", "aac",
         "-movflags", "+faststart", str(out),
     ]
 

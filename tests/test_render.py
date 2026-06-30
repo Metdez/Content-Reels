@@ -88,7 +88,14 @@ def test_render_cmd_volume_no_captions_uses_af():
     cmd = r.build_render_cmd(Path("s.mp4"), 0.0, 5.0, "1:1", 0.0,
                              Path("o.mp4"), 1920, 1080, volume=1.5)
     assert "0:a?" in cmd and "-af" in cmd
-    assert "volume=1.500" in cmd[cmd.index("-af") + 1]
+    af = cmd[cmd.index("-af") + 1]
+    assert "volume=1.500" in af and "loudnorm" in af   # scale then normalize loudness
+
+
+def test_render_cmd_loudnorm_applied_without_volume():
+    cmd = r.build_render_cmd(Path("s.mp4"), 0.0, 5.0, "1:1", 0.0,
+                             Path("o.mp4"), 1920, 1080)
+    assert "loudnorm" in cmd[cmd.index("-af") + 1]      # every clip is normalized
 
 
 def test_render_cmd_volume_with_captions_folds_into_filtergraph():
@@ -96,7 +103,7 @@ def test_render_cmd_volume_with_captions_folds_into_filtergraph():
     cmd = r.build_render_cmd(Path("s.mp4"), 0.0, 5.0, "9:16", 0.0,
                              Path("o.mp4"), 1920, 1080, png_events=pngs, volume=0.5)
     fc = cmd[cmd.index("-filter_complex") + 1]
-    assert "[0:a]volume=0.500[outa]" in fc        # audio scaled inside the graph
+    assert "[0:a]volume=0.500,loudnorm" in fc      # scale + normalize inside the graph
     assert "[outa]" in cmd and "-af" not in cmd   # -af is illegal alongside -filter_complex
 
 
