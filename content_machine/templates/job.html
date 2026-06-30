@@ -4,132 +4,308 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Job · Content Machine</title>
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--line:#272e3a;--fg:#e6edf3;--mut:#8b949e;--accent:#3b82f6;--ok:#3fb950}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  header{padding:18px 28px;border-bottom:1px solid var(--line)}
-  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  main{max-width:1080px;margin:0 auto;padding:24px}
-  .stages{display:flex;gap:10px;margin:8px 0 26px;flex-wrap:wrap}
-  .stage{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);
-    border-radius:10px;padding:12px 14px}
-  .stage .name{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
-  .stage .st{font-weight:600;margin-top:3px}
-  .st.done{color:var(--ok)} .st.running{color:var(--accent)} .st.error{color:#f85149}
-  .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
-  .clip{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
-  video{width:100%;border-radius:8px;background:#000;max-height:520px}
-  .title{font-weight:600;margin:10px 0 2px} .score{color:var(--ok);font-size:13px}
-  .why{color:var(--mut);font-size:13px;margin:6px 0}
-  .tabs{display:flex;gap:6px;margin:8px 0}
-  .tab{font-size:12px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut)}
+  :root{
+    --bg:#0a0c10;--bg2:#0e1117;--panel:#151a22;--panel2:#1b2230;--line:#242c3a;
+    --fg:#e8eef6;--mut:#8a96a8;--accent:#6d5efc;--accent2:#9b8bff;--ok:#3fb950;--warn:#d29922;--err:#f85149;
+    --radius:14px;--shadow:0 8px 30px rgba(0,0,0,.35)
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:radial-gradient(1200px 600px at 80% -10%,#1a1340 0%,transparent 55%),var(--bg);
+    color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;min-height:100vh}
+  a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+  header{padding:18px 32px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
+  header .src{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  main{max-width:1120px;margin:0 auto;padding:26px 24px 72px}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 140%);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px;margin-bottom:22px;box-shadow:var(--shadow)}
+  h2{font-size:17px;margin:0 0 4px;letter-spacing:-.01em} .lead{color:var(--mut);font-size:13.5px;margin:0 0 16px}
+  label.fld{display:block;font-size:12px;color:var(--mut);margin:0 0 5px;text-transform:uppercase;letter-spacing:.05em}
+  select,input[type=number]{background:#0c111a;border:1px solid var(--line);color:var(--fg);border-radius:9px;
+    padding:9px 11px;font-size:14px;width:100%}
+  .row{display:flex;gap:16px;flex-wrap:wrap} .row>div{flex:1;min-width:130px}
+  button{background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border:0;border-radius:10px;
+    padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(109,94,252,.35);transition:.12s}
+  button:hover{filter:brightness(1.07)} button:active{transform:translateY(1px)} button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+  button.ghost{background:#1b2230;color:var(--fg);border:1px solid var(--line);box-shadow:none}
+
+  /* Crop preview */
+  .cropwrap{position:relative;overflow:hidden;border-radius:12px;background:#000;line-height:0;border:1px solid var(--line)}
+  .cropwrap video{width:100%;display:block}
+  .cropbox{position:absolute;border:2px solid var(--accent2);box-shadow:0 0 0 9999px rgba(0,0,0,.58);
+    pointer-events:none;transition:.04s left,.04s width,.04s top,.04s height;border-radius:2px}
+  .cropbox .tag{position:absolute;top:6px;left:6px;background:var(--accent);color:#fff;font-size:11px;
+    font-weight:700;padding:2px 7px;border-radius:6px;line-height:1.4;white-space:nowrap}
+  .aspects{display:flex;gap:7px;margin:14px 0 4px}
+  .asp{font-size:12.5px;font-weight:600;padding:6px 13px;border:1px solid var(--line);border-radius:999px;
+    cursor:pointer;color:var(--mut);background:#131a26}
+  .asp.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .sliderrow{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .sliderrow input[type=range]{flex:1;accent-color:var(--accent2)}
+  .sliderrow .val{font:12px ui-monospace,Menlo,monospace;color:var(--mut);min-width:84px;text-align:right}
+  .hint{color:var(--mut);font-size:12.5px;margin-top:8px}
+
+  /* Stage stepper */
+  .steps{display:flex;gap:10px;margin:4px 0 18px;flex-wrap:wrap}
+  .step{flex:1;min-width:150px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .step .name{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);display:flex;align-items:center;gap:7px}
+  .step .st{font-weight:600;margin-top:4px;font-size:14px;text-transform:capitalize}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3a4456;display:inline-block}
+  .step.done .dot{background:var(--ok)} .step.running .dot{background:var(--accent2);box-shadow:0 0 0 4px rgba(155,139,255,.18);animation:pulse 1.3s infinite}
+  .step.error .dot{background:var(--err)}
+  .step.done .st{color:var(--ok)} .step.running .st{color:var(--accent2)} .step.error .st{color:var(--err)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .banner{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:14px 16px;color:var(--mut);font-size:14px}
+  .banner.err{color:#ff7b72;border-color:rgba(248,81,73,.4)}
+
+  details.logs{margin:0 0 22px;background:#0c0f15;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  details.logs summary{cursor:pointer;padding:12px 16px;color:var(--fg);user-select:none;font-weight:600;font-size:13.5px;
+    display:flex;align-items:center;gap:8px;background:var(--panel2)}
+  details.logs summary .spin{margin-left:auto;color:var(--mut);font-size:12px;font-weight:400}
+  pre#log{margin:0;padding:14px 16px;max-height:340px;overflow:auto;
+    font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d4e3;white-space:pre-wrap;background:#0a0d12}
+
+  /* Clips */
+  h3.sec{font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 14px}
+  .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+  .clip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column}
+  .clip video{width:100%;border-radius:10px;background:#000;max-height:540px}
+  .clip .title{font-weight:600;margin:11px 0 3px;font-size:15px}
+  .clip .score{color:var(--ok);font-size:12.5px} .clip .why{color:var(--mut);font-size:13px;margin:7px 0}
+  .tabs{display:flex;gap:6px;margin:9px 0 2px}
+  .tab{font-size:12px;font-weight:600;padding:4px 11px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut)}
   .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .dl{display:flex;gap:12px;font-size:13px;margin-top:8px}
-  .reframe{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--mut)}
-  .reframe input{flex:1} button{background:var(--accent);color:#fff;border:0;border-radius:7px;
-    padding:6px 12px;font-size:13px;cursor:pointer}
-  .banner{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;color:var(--mut)}
-  .err{color:#f85149}
-  details.logs{margin:14px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px}
-  details.logs summary{cursor:pointer;padding:12px 14px;color:var(--mut);user-select:none}
-  pre#log{margin:0;padding:0 14px 14px;max-height:320px;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cdd9e5;white-space:pre-wrap}
+  .clip .actions{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:12px}
+  .dl{display:flex;gap:12px;font-size:13px;flex-wrap:wrap} .dl a{font-weight:600}
+  .adjust{font-size:13px;font-weight:600;background:#1b2230;border:1px solid var(--line);box-shadow:none;padding:7px 13px}
+
+  /* Modal */
+  .modal{position:fixed;inset:0;background:rgba(4,6,10,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal.open{display:flex}
+  .modal .inner{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:560px;width:100%;box-shadow:var(--shadow)}
+  .modal h2{margin-bottom:2px} .modal .x{float:right;cursor:pointer;color:var(--mut);font-size:20px;line-height:1}
 </style>
 </head>
 <body>
-<header><a href="/">← Library</a> &nbsp;·&nbsp; <span id="src" class="mut"></span></header>
-<main>
-  <div class="stages" id="stages"></div>
-  <div id="status" class="banner">Starting…</div>
-  <details class="logs" open>
-    <summary>📜 Live log</summary>
-    <pre id="log">waiting for pipeline output…</pre>
-  </details>
-  <div class="clips" id="clips"></div>
+<header><a href="/">← Library</a><span class="src" id="src"></span></header>
+<main id="main">
+  <div class="banner" id="boot">Loading…</div>
 </main>
-<script>
-const JOB = "{{ job_id }}";
-const ASPECTS = ["9:16","1:1","16:9"];
-let pollTimer = null;
 
-function stageEl(name, s){
-  return `<div class="stage"><div class="name">${name}</div>
-    <div class="st ${s.status}">${s.status}${s.error ? ' — '+s.error : ''}</div></div>`;
+<!-- Reframe modal -->
+<div class="modal" id="modal"><div class="inner">
+  <span class="x" onclick="closeModal()">✕</span>
+  <h2>Adjust crop</h2>
+  <p class="lead" id="mlead">Move the crop window, then re-render this clip.</p>
+  <div class="cropwrap" id="mwrap"><video id="mvid" muted playsinline preload="metadata"></video>
+    <div class="cropbox" id="mbox"><span class="tag" id="mtag">9:16</span></div></div>
+  <div class="aspects" id="masps"></div>
+  <div class="sliderrow"><span>Crop&nbsp;X</span>
+    <input type="range" id="moff" min="-1" max="1" step="0.02" value="0">
+    <span class="val" id="mval">center</span></div>
+  <div class="hint" id="mhint"></div>
+  <div style="display:flex;gap:10px;margin-top:18px">
+    <button id="mgo">Re-render clip</button>
+    <button class="ghost" onclick="closeModal()">Cancel</button>
+  </div>
+</div></div>
+
+<script>
+const JOB="{{ job_id }}";
+const ASPECTS=["9:16","1:1","16:9"];
+let DATA=null, pollTimer=null, previewBuilt=false;
+
+/* ---- crop math: mirrors render.compute_crop exactly ---- */
+function computeCrop(sw,sh,aspect,xoff){
+  const [tw,th]=aspect.split(":").map(Number);
+  const tar=tw/th, sar=sw/sh;
+  let cw,ch,x,y;
+  if(tar<=sar){ ch=sh; cw=Math.round(sh*tar); const slack=sw-cw;
+    xoff=Math.max(-1,Math.min(1,xoff)); x=Math.round(slack/2+xoff*slack/2); x=Math.max(0,Math.min(slack,x)); y=0; }
+  else { cw=sw; ch=Math.round(sw/tar); x=0; y=Math.max(0,Math.floor((sh-ch)/2)); }
+  cw-=cw%2; ch-=ch%2;
+  return {x,y,w:cw,h:ch};
+}
+function drawBox(box,tag,sw,sh,aspect,xoff){
+  if(!sw||!sh){box.style.display='none';return;} box.style.display='block';
+  const c=computeCrop(sw,sh,aspect,xoff);
+  box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
+  box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%';
+  if(tag) tag.textContent=aspect;
+}
+function widthLimited(sw,sh,aspect){ const [tw,th]=aspect.split(":").map(Number); return (tw/th)<=(sw/sh); }
+function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.round(-v*100)+'% left':Math.round(v*100)+'% right →'); }
+
+/* ---------- PRE-RUN PREVIEW ---------- */
+function buildPreview(d){
+  previewBuilt=true;
+  const [sw,sh]=d.source_dims||[0,0];
+  const m=document.getElementById('main');
+  m.innerHTML=`
+   <div class="card">
+     <h2>Preview &amp; set the crop</h2>
+     <p class="lead">Position the crop window for the vertical/square ratios, choose your options, then run. Nothing is processed until you hit Run.</p>
+     <div class="cropwrap" id="pwrap"><video id="pvid" src="${d.source_url}" muted playsinline preload="metadata" controls></video>
+       <div class="cropbox" id="pbox"><span class="tag" id="ptag">9:16</span></div></div>
+     <div class="aspects" id="pasps">${ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('')}</div>
+     <div class="sliderrow"><span>Crop&nbsp;X</span>
+       <input type="range" id="poff" min="-1" max="1" step="0.02" value="0">
+       <span class="val" id="pval">center</span></div>
+     <div class="hint" id="phint">${sw?`Source ${sw}×${sh}. The box shows what each ratio keeps.`:'Could not read video size — crop offset still applies.'}</div>
+   </div>
+   <div class="card">
+     <h2>Run options</h2>
+     <div class="row" style="margin-top:6px">
+       <div><label class="fld">Max clips</label><input type="number" id="omax" value="6" min="1" max="20"></div>
+       <div><label class="fld">Whisper model</label>
+         <select id="omodel"><option value="">base.en (fast)</option><option value="small.en">small.en</option><option value="medium.en">medium.en (best)</option></select></div>
+       <div><label class="fld">Captions</label>
+         <select id="ocaps"><option value="overlay">overlay (recommended)</option><option value="none">none</option><option value="hyperframes">hyperframes (beta)</option></select></div>
+     </div>
+     <button style="margin-top:18px;width:100%" id="runbtn">▶ Run — transcribe, pick clips &amp; render</button>
+   </div>`;
+  let aspect="9:16";
+  const box=document.getElementById('pbox'),tag=document.getElementById('ptag'),
+        off=document.getElementById('poff'),val=document.getElementById('pval'),hint=document.getElementById('phint');
+  const redraw=()=>{ drawBox(box,tag,sw,sh,aspect,parseFloat(off.value)); val.textContent=offLabel(off.value);
+    const wl=widthLimited(sw,sh,aspect);
+    off.disabled=!wl;
+    hint.textContent = sw ? (wl?`Source ${sw}×${sh}. Drag to reframe — keeps the highlighted area for ${aspect}.`
+                               :`${aspect} uses the full width — no horizontal crop to adjust here.`)
+                          : 'Could not read video size — crop offset still applies.'; };
+  document.getElementById('pvid').addEventListener('loadedmetadata',redraw);
+  off.addEventListener('input',redraw);
+  document.querySelectorAll('#pasps .asp').forEach(el=>el.addEventListener('click',()=>{
+    document.querySelectorAll('#pasps .asp').forEach(x=>x.classList.remove('active'));
+    el.classList.add('active'); aspect=el.dataset.a; redraw(); }));
+  redraw();
+  document.getElementById('runbtn').addEventListener('click',async ev=>{
+    const btn=ev.target; btn.disabled=true; btn.textContent='Starting…';
+    const fd=new FormData();
+    fd.append('x_offset',off.value); fd.append('max_clips',document.getElementById('omax').value);
+    fd.append('model',document.getElementById('omodel').value); fd.append('captions',document.getElementById('ocaps').value);
+    const r=await fetch(`/api/job/${JOB}/run`,{method:'POST',body:fd});
+    if(r.ok){ previewBuilt=false; m.innerHTML=''; startPolling(); }
+    else { btn.disabled=false; btn.textContent='▶ Run — transcribe, pick clips & render'; alert('Could not start: '+(await r.text())); }
+  });
 }
 
+/* ---------- PROGRESS + CLIPS ---------- */
+function progressShell(){
+  const m=document.getElementById('main');
+  if(document.getElementById('steps')) return;
+  m.innerHTML=`
+   <div class="steps" id="steps"></div>
+   <details class="logs" open><summary>📜 Live log <span class="spin" id="spin"></span></summary><pre id="log">waiting for pipeline output…</pre></details>
+   <div class="banner" id="status">Starting…</div>
+   <h3 class="sec" id="clipsec" style="display:none">Clips</h3>
+   <div class="clips" id="clips"></div>`;
+}
+const STEP_ICON={ingest:'📥',transcribe:'📝',select:'✨',render:'🎬'};
+function renderSteps(stages){
+  document.getElementById('steps').innerHTML=Object.entries(stages).map(([k,v])=>
+    `<div class="step ${v.status}"><div class="name"><span class="dot"></span>${STEP_ICON[k]||''} ${k}</div>
+     <div class="st">${v.status}${v.error?' — '+esc(v.error):(v.clips!=null?' · '+v.clips+' clips':'')}</div></div>`).join('');
+}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
 function clipEl(c){
-  const first = c.outputs["9:16"] || Object.values(c.outputs)[0] || "";
-  const tabs = ASPECTS.filter(a=>c.outputs[a]).map((a,i)=>
-    `<span class="tab ${i===0?'active':''}" data-src="${c.outputs[a]}" data-clip="${c.index}">${a}</span>`).join("");
-  const dls = ASPECTS.filter(a=>c.outputs[a]).map(a=>
-    `<a href="/download/${JOB}/${c.index}/${a}">↓ ${a}</a>`).join("");
+  const first=c.outputs["9:16"]||Object.values(c.outputs)[0]||"";
+  const tabs=ASPECTS.filter(a=>c.outputs[a]).map((a,i)=>
+    `<span class="tab ${i===0?'active':''}" data-src="${c.outputs[a]}" data-clip="${c.index}" data-a="${a}">${a}</span>`).join("");
+  const dls=ASPECTS.filter(a=>c.outputs[a]).map(a=>`<a href="/download/${JOB}/${c.index}/${a}">↓ ${a}</a>`).join("");
   return `<div class="clip" id="clip${c.index}">
     <video src="${first}" controls preload="metadata" id="vid${c.index}"></video>
     <div class="tabs">${tabs}</div>
-    <div class="title">${c.title||('Clip '+c.index)}</div>
-    <div class="score">${c.score!=null?('★ '+c.score):''} ${c.captions?('· '+c.captions+' captions'):''}</div>
-    <div class="why">${c.rationale||''}</div>
-    <div class="reframe">crop
-      <input type="range" min="-1" max="1" step="0.1" value="0" id="off${c.index}">
-      <button onclick="reframe(${c.index})">re-frame</button></div>
-    <div class="dl">${dls}</div>
-  </div>`;
+    <div class="title">${esc(c.title)||('Clip '+c.index)}</div>
+    <div class="score">${c.score!=null?('★ '+c.score):''}${c.captions?(' · '+c.captions+' captions'):''}</div>
+    <div class="why">${esc(c.rationale)||''}</div>
+    <div class="actions">
+      <button class="adjust" onclick="openModal(${c.index})">✂ Adjust crop</button>
+      <div class="dl">${dls}</div>
+    </div></div>`;
 }
-
-async function reframe(idx){
-  const off = document.getElementById('off'+idx).value;
-  const fd = new FormData(); fd.append('x_offset', off); fd.append('captions','overlay');
-  const btn = event.target; btn.textContent='…'; btn.disabled=true;
-  const r = await fetch(`/api/job/${JOB}/clip/${idx}/reframe`, {method:'POST', body:fd});
-  if(r.ok){ const d = await r.json();
-    const active = document.querySelector(`#clip${idx} .tab.active`);
-    const a = active ? active.textContent : "9:16";
-    const v = document.getElementById('vid'+idx);
-    v.src = (d.outputs[a]||Object.values(d.outputs)[0]) + '?t=' + Date.now(); v.load();
-    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{ if(d.outputs[t.textContent]) t.dataset.src=d.outputs[t.textContent]; });
-  }
-  btn.textContent='re-frame'; btn.disabled=false;
-}
-
-document.addEventListener('click', e=>{
+document.addEventListener('click',e=>{
   if(e.target.classList.contains('tab')){
-    const idx = e.target.dataset.clip;
+    const idx=e.target.dataset.clip;
     document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>t.classList.remove('active'));
     e.target.classList.add('active');
-    const v = document.getElementById('vid'+idx); v.src = e.target.dataset.src; v.load();
+    const v=document.getElementById('vid'+idx); v.src=e.target.dataset.src; v.load();
   }
 });
 
-async function pollLog(){
-  try{
-    const r = await fetch(`/api/job/${JOB}/log`); if(!r.ok) return;
-    const d = await r.json();
-    if(d.log){ const el = document.getElementById('log');
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
-      el.textContent = d.log;
-      if(atBottom) el.scrollTop = el.scrollHeight;
-    }
-  }catch(e){}
+/* ---------- reframe modal ---------- */
+let MCLIP=null, maspect="9:16";
+function openModal(idx){
+  const c=DATA.clips.find(c=>c.index===idx); if(!c) return; MCLIP=c; maspect="9:16";
+  const [sw,sh]=DATA.source_dims||[0,0];
+  const masps=document.getElementById('masps');
+  masps.innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('');
+  masps.querySelectorAll('.asp').forEach(el=>el.addEventListener('click',()=>{
+    masps.querySelectorAll('.asp').forEach(x=>x.classList.remove('active')); el.classList.add('active');
+    maspect=el.dataset.a; mredraw(); }));
+  const mvid=document.getElementById('mvid');
+  mvid.src=DATA.source_url; mvid.currentTime=Math.max(0,(c.start||0)+0.1);
+  document.getElementById('moff').value=0;
+  document.getElementById('mlead').textContent=`Clip ${idx}: "${c.title||''}" — move the crop window, then re-render.`;
+  mvid.addEventListener('loadedmetadata',()=>{ try{mvid.currentTime=Math.max(0,(c.start||0)+0.1)}catch(e){}; mredraw(); },{once:true});
+  document.getElementById('modal').classList.add('open'); mredraw();
 }
+function mredraw(){
+  const [sw,sh]=DATA.source_dims||[0,0];
+  drawBox(document.getElementById('mbox'),document.getElementById('mtag'),sw,sh,maspect,parseFloat(document.getElementById('moff').value));
+  document.getElementById('mval').textContent=offLabel(document.getElementById('moff').value);
+  const wl=widthLimited(sw,sh,maspect); const off=document.getElementById('moff'); off.disabled=!wl;
+  document.getElementById('mhint').textContent = wl?'':`${maspect} uses the full width — no horizontal crop here.`;
+}
+document.getElementById('moff').addEventListener('input',mredraw);
+function closeModal(){ document.getElementById('modal').classList.remove('open'); const v=document.getElementById('mvid'); v.pause(); v.removeAttribute('src'); v.load(); }
+document.getElementById('mgo').addEventListener('click',async ev=>{
+  if(!MCLIP) return; const btn=ev.target; btn.disabled=true; btn.textContent='Re-rendering…';
+  const fd=new FormData(); fd.append('x_offset',document.getElementById('moff').value); fd.append('captions','overlay');
+  const r=await fetch(`/api/job/${JOB}/clip/${MCLIP.index}/reframe`,{method:'POST',body:fd});
+  if(r.ok){ const d=await r.json(); const idx=MCLIP.index;
+    // update cached outputs + reload the visible video
+    const c=DATA.clips.find(c=>c.index===idx); if(c) c.outputs=d.outputs;
+    const activeTab=document.querySelector(`#clip${idx} .tab.active`); const a=activeTab?activeTab.dataset.a:"9:16";
+    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{ if(d.outputs[t.dataset.a]) t.dataset.src=d.outputs[t.dataset.a]; });
+    const v=document.getElementById('vid'+idx); v.src=(d.outputs[a]||Object.values(d.outputs)[0])+'?t='+Date.now(); v.load();
+    closeModal();
+  } else { alert('Re-render failed: '+(await r.text())); }
+  btn.disabled=false; btn.textContent='Re-render clip';
+});
 
-async function poll(){
-  pollLog();
-  const r = await fetch(`/api/job/${JOB}`); if(!r.ok) return;
-  const d = await r.json();
-  document.getElementById('src').textContent = d.source_name || JOB;
-  document.getElementById('stages').innerHTML =
-    Object.entries(d.stages).map(([k,v])=>stageEl(k,v)).join("");
-  const status = document.getElementById('status');
-  if(d.error){ status.innerHTML = `<span class="err">Failed: ${d.error}</span>`; clearInterval(pollTimer); }
-  else if(d.clips.length){
-    status.style.display='none';
-    document.getElementById('clips').innerHTML = d.clips.map(clipEl).join("");
-    if(d.stages.render.status==='done') clearInterval(pollTimer);
-  } else {
-    const running = Object.entries(d.stages).find(([k,v])=>v.status==='running');
-    status.textContent = running ? `Working: ${running[0]}…` : 'Queued…';
-  }
+/* ---------- polling ---------- */
+async function pollLog(){
+  try{ const r=await fetch(`/api/job/${JOB}/log`); if(!r.ok)return; const d=await r.json();
+    if(d.log){ const el=document.getElementById('log'); if(!el)return;
+      const atBottom=el.scrollTop+el.clientHeight>=el.scrollHeight-24; el.textContent=d.log;
+      if(atBottom) el.scrollTop=el.scrollHeight; } }catch(e){}
 }
-poll(); pollTimer = setInterval(poll, 2500);
+async function poll(){
+  const r=await fetch(`/api/job/${JOB}`); if(!r.ok)return; const d=await r.json(); DATA=d;
+  document.getElementById('src').textContent=d.source_name||JOB;
+  if(d.awaiting_run){ if(!previewBuilt) buildPreview(d); return; }
+  progressShell(); pollLog();
+  renderSteps(d.stages);
+  const status=document.getElementById('status'); const spin=document.getElementById('spin');
+  const running=Object.entries(d.stages).find(([k,v])=>v.status==='running');
+  if(d.error){ status.className='banner err'; status.textContent='Failed: '+d.error; if(spin)spin.textContent=''; stop(); }
+  else if(d.clips.length){
+    status.style.display='none'; document.getElementById('clipsec').style.display='block';
+    document.getElementById('clips').innerHTML=d.clips.map(clipEl).join("");
+    if(d.stages.render.status==='done'){ if(spin)spin.textContent='done'; stop(); }
+  } else { status.style.display='block'; status.className='banner';
+    status.textContent= running?`Working: ${running[0]}…`:'Queued…'; if(spin)spin.textContent=running?running[0]+'…':''; }
+}
+function stop(){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} }
+function startPolling(){ if(pollTimer)return; poll(); pollTimer=setInterval(poll,2500); }
+
+/* boot: one fetch decides preview vs progress */
+(async function(){
+  const r=await fetch(`/api/job/${JOB}`); if(!r.ok){document.getElementById('boot').textContent='Job not found';return;}
+  const d=await r.json(); DATA=d; document.getElementById('src').textContent=d.source_name||JOB;
+  if(d.awaiting_run){ buildPreview(d); } else { startPolling(); }
+})();
 </script>
 </body>
 </html>

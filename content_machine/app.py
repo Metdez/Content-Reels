@@ -66,16 +66,16 @@ def media_url(path: str | Path) -> str:
     return f"/media/{rel.as_posix()}"
 
 
-def _run_pipeline(temp_video: Path, model: str | None, max_clips: int,
+def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                   x_offset: float, captions_mode: str) -> None:
-    job = Job.for_video(temp_video)
+    job = Job.load(job_id)
     RUNNING[job.job_id] = {"error": None}
     with job_log(job.job_id):
         log.info("=== pipeline start: %s (model=%s, max_clips=%d, captions=%s) ===",
                  job.job_id, model or config.DEFAULT_MODEL, max_clips, captions_mode)
         try:
             import json as _json
-            transcribe.transcribe(temp_video, model=model)
+            transcribe.transcribe(source, model=model)
             clips_path = select.select_clips(job, max_clips=max_clips)
             n_clips = len(_json.loads(Path(clips_path).read_text()).get("clips", []))
             if n_clips == 0:
@@ -109,11 +109,17 @@ def list_jobs() -> list[dict]:
             continue
         stages = m.get("stages", {})
         done = stages.get("render", {}).get("status") == "done"
+        if done:
+            status = "ready"
+        elif m.get("awaiting_run"):
+            status = "awaiting run"
+        else:
+            status = _overall_status(stages)
         jobs.append({
             "job_id": m.get("job_id", mf.parent.name),
             "source_name": m.get("source_name", ""),
             "created_at": m.get("created_at", 0),
-            "status": "ready" if done else _overall_status(stages),
+            "status": status,
             "n_clips": stages.get("render", {}).get("clips")
                        or stages.get("select", {}).get("clips"),
         })
@@ -147,14 +153,22 @@ def _job_payload(job: Job) -> dict:
                 "thumb": media_url(c["thumb"]) if c.get("thumb") else None,
                 "outputs": {a: media_url(p) for a, p in c.get("outputs", {}).items()},
             })
-    # rationale lives in clips.json
+    # rationale + timing live in clips.json
     if job.clips_json_path.exists():
-        rats = {i + 1: c.get("rationale", "")
-                for i, c in enumerate(json.loads(job.clips_json_path.read_text()).get("clips", []))}
+        src_clips = json.loads(job.clips_json_path.read_text()).get("clips", [])
+        meta = {i + 1: c for i, c in enumerate(src_clips)}
         for c in clips:
-            c["rationale"] = rats.get(c["index"], "")
+            sc = meta.get(c["index"], {})
+            c["rationale"] = sc.get("rationale", "")
+            c["start"] = sc.get("start", 0)
+            c["end"] = sc.get("end", 0)
+    source = next(job.data_dir.glob("source.*"), None)
     return {"job_id": job.job_id, "source_name": m.get("source_name", ""),
             "stages": stages, "clips": clips,
+            "awaiting_run": bool(m.get("awaiting_run")),
+            "source_url": media_url(source) if source else None,
+            "source_dims": m.get("source_dims", [0, 0]),
+            "run_params": m.get("run_params", {}),
             "error": RUNNING.get(job.job_id, {}).get("error")}
 
 
@@ -165,28 +179,74 @@ def index():
 
 
 @app.post("/upload")
-async def upload(video: UploadFile = File(...), model: str = Form(""),
-                 max_clips: int = Form(6), x_offset: float = Form(0.0),
-                 captions: str = Form("overlay")):
+async def upload(video: UploadFile = File(...)):
+    """Stage the upload for preview — does NOT start the pipeline.
+
+    The source is moved into data/<job_id>/source<ext> (previewable via /media),
+    its dimensions are probed for the crop overlay, and the manifest is marked
+    `awaiting_run`. The user picks the crop + run options on the job page, then
+    POSTs /api/job/{id}/run to actually start transcribe→select→render.
+    """
     if not video.filename:
         raise HTTPException(400, "No file")
     try:
         safe_name = safe_upload_name(video.filename)  # blocks path traversal
     except ValueError as e:
         raise HTTPException(400, str(e))
-    dest = UPLOADS / safe_name
-    with open(dest, "wb") as f:
+    tmp = UPLOADS / safe_name
+    with open(tmp, "wb") as f:
         shutil.copyfileobj(video.file, f)
-    job_id = compute_job_id(dest)
-    log.info("upload received: %s (%.1f MB) -> job %s", safe_name,
-             dest.stat().st_size / 1e6, job_id)
-    # init manifest so polling works immediately
+    job_id = compute_job_id(tmp)
+    ext = Path(safe_name).suffix
     job = Job(job_id=job_id, source_name=safe_name, data_dir=config.DATA_DIR / job_id)
-    job.save_manifest(job.load_manifest())
-    threading.Thread(target=_run_pipeline,
-                     args=(dest, model or None, max_clips, x_offset, captions),
-                     daemon=True).start()
+    job.ensure_dirs()
+    src = job.source_path(ext)
+    # Move (not copy) the staged upload into the job dir so we don't keep two
+    # copies of a multi-GB video; os.replace is atomic on the same volume.
+    import os as _os
+    if src.exists():
+        tmp.unlink(missing_ok=True)
+    else:
+        _os.replace(tmp, src)
+    try:
+        w, h = render.probe_dims(src)
+    except Exception as e:  # non-fatal — preview overlay just won't draw
+        log.warning("probe_dims failed for %s: %s", src, e)
+        w, h = 0, 0
+    log.info("upload staged: %s (%.1f MB, %dx%d) -> job %s — awaiting run",
+             safe_name, src.stat().st_size / 1e6, w, h, job_id)
+    manifest = job.load_manifest()
+    manifest["awaiting_run"] = True
+    manifest["source_ext"] = ext
+    manifest["source_dims"] = [w, h]
+    job.update_stage("ingest", "done", source=str(src))  # source already on disk
+    job.save_manifest(manifest)
     return RedirectResponse(f"/job/{job_id}", status_code=303)
+
+
+@app.post("/api/job/{job_id}/run")
+def run_job(job_id: str, model: str = Form(""), max_clips: int = Form(6),
+            x_offset: float = Form(0.0), captions: str = Form("overlay")):
+    """Start the pipeline for a staged job using the user-chosen crop + options."""
+    if not (config.DATA_DIR / job_id / "job.json").exists():
+        raise HTTPException(404, "Job not found")
+    job = Job.load(job_id)
+    manifest = job.load_manifest()
+    if not manifest.get("awaiting_run"):
+        raise HTTPException(409, "Job already started")
+    src = next(job.data_dir.glob("source.*"), None)
+    if src is None:
+        raise HTTPException(400, "Source video missing")
+    manifest["awaiting_run"] = False
+    manifest["run_params"] = {"model": model or None, "max_clips": max_clips,
+                              "x_offset": x_offset, "captions": captions}
+    job.save_manifest(manifest)
+    log.info("run requested: job %s (x_offset=%.2f, max_clips=%d, captions=%s)",
+             job_id, x_offset, max_clips, captions)
+    threading.Thread(target=_run_pipeline,
+                     args=(job_id, src, model or None, max_clips, x_offset, captions),
+                     daemon=True).start()
+    return {"ok": True}
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)

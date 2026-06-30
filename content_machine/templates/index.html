@@ -4,66 +4,105 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Content Machine</title>
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--line:#272e3a;--fg:#e6edf3;--mut:#8b949e;--accent:#3b82f6}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
-  h1{font-size:20px;margin:0} .sub{color:var(--mut);font-size:13px}
-  main{max-width:920px;margin:0 auto;padding:28px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:24px}
-  label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
-  input,select{background:#0d1117;border:1px solid var(--line);color:var(--fg);
-    border-radius:8px;padding:9px 10px;font-size:14px;width:100%}
-  .row{display:flex;gap:16px;flex-wrap:wrap} .row>div{flex:1;min-width:140px}
-  button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:11px 18px;
-    font-size:14px;font-weight:600;cursor:pointer;margin-top:16px}
-  button:hover{filter:brightness(1.1)}
-  table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
-  th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-  .pill{font-size:12px;padding:2px 9px;border-radius:999px;background:#1f2937;color:var(--mut)}
-  .pill.ready{background:#0f2e1c;color:#3fb950} .empty{color:var(--mut);padding:18px 0}
+  :root{
+    --bg:#0a0c10;--bg2:#0e1117;--panel:#151a22;--panel2:#1b2230;--line:#242c3a;
+    --fg:#e8eef6;--mut:#8a96a8;--accent:#6d5efc;--accent2:#9b8bff;--ok:#3fb950;--warn:#d29922;--err:#f85149;
+    --radius:14px;--shadow:0 8px 30px rgba(0,0,0,.35)
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:radial-gradient(1200px 600px at 80% -10%,#1a1340 0%,transparent 55%),var(--bg);
+    color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+    min-height:100vh}
+  a{color:var(--accent2);text-decoration:none} a:hover{text-decoration:underline}
+  header{padding:26px 32px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line)}
+  .logo{font-size:26px}
+  h1{font-size:21px;margin:0;letter-spacing:-.02em;font-weight:700}
+  .sub{color:var(--mut);font-size:13px}
+  main{max-width:960px;margin:0 auto;padding:32px 24px 64px}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 140%);
+    border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-bottom:26px;box-shadow:var(--shadow)}
+  .card h3{margin:0 0 14px;font-size:15px;letter-spacing:.01em}
+  /* Dropzone */
+  .drop{display:block;border:1.5px dashed #33405a;border-radius:var(--radius);padding:40px 20px;text-align:center;
+    transition:.15s border-color,.15s background;cursor:pointer;background:#0f141d}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:#121a2b}
+  .drop .big{font-size:17px;font-weight:600;margin:8px 0 4px}
+  .drop .small{color:var(--mut);font-size:13px}
+  .drop input{display:none}
+  .chosen{margin-top:14px;display:none;align-items:center;gap:10px;justify-content:center;color:var(--fg);font-size:14px}
+  .chosen .name{font-weight:600}
+  button{background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;border:0;border-radius:10px;
+    padding:12px 22px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(109,94,252,.35);
+    transition:.12s transform,.12s filter}
+  button:hover{filter:brightness(1.07)} button:active{transform:translateY(1px)}
+  button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+  .go{margin-top:18px;width:100%}
+  /* Library */
+  .lib{display:grid;gap:10px}
+  .job{display:flex;align-items:center;gap:14px;padding:13px 15px;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel2);transition:.12s border-color}
+  .job:hover{border-color:#33405a}
+  .job .src{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .job .meta{color:var(--mut);font-size:12.5px}
+  .pill{font-size:11.5px;padding:3px 11px;border-radius:999px;background:#222b3a;color:var(--mut);
+    white-space:nowrap;font-weight:600;letter-spacing:.02em}
+  .pill.ready{background:rgba(63,185,80,.14);color:#56d364}
+  .pill.run{background:rgba(210,153,34,.15);color:#e3b341}
+  .pill.err{background:rgba(248,81,73,.15);color:#ff7b72}
+  .empty{color:var(--mut);padding:26px 0;text-align:center}
+  .open{font-size:13px;font-weight:600}
 </style>
 </head>
 <body>
-<header><h1>🎬 Content Machine</h1><span class="sub">local-first LinkedIn clipper</span></header>
+<header>
+  <span class="logo">🎬</span>
+  <div><h1>Content Machine</h1><div class="sub">local-first LinkedIn video clipper · 9:16 · 1:1 · 16:9</div></div>
+</header>
 <main>
   <div class="card">
-    <form action="/upload" method="post" enctype="multipart/form-data">
-      <label>Video file</label>
-      <input type="file" name="video" accept="video/*" required>
-      <div class="row">
-        <div><label>Max clips</label><input type="number" name="max_clips" value="6" min="1" max="20"></div>
-        <div><label>Whisper model</label>
-          <select name="model"><option value="">base.en (default)</option>
-          <option value="small.en">small.en</option><option value="medium.en">medium.en</option></select></div>
-        <div><label>Captions</label>
-          <select name="captions"><option value="overlay">overlay (default)</option>
-          <option value="hyperframes">hyperframes</option><option value="none">none</option></select></div>
-        <div><label>Crop offset (−1…1)</label><input type="number" name="x_offset" value="0" step="0.1" min="-1" max="1"></div>
-      </div>
-      <button type="submit">Upload &amp; clip</button>
+    <h3>New clip job</h3>
+    <form id="form" action="/upload" method="post" enctype="multipart/form-data">
+      <label class="drop" id="drop">
+        <input type="file" id="file" name="video" accept="video/*" required>
+        <div style="font-size:30px">⬆️</div>
+        <div class="big">Drop a video here, or click to choose</div>
+        <div class="small">talk · webinar · podcast — mp4, mov, mkv, webm · stays on your machine</div>
+        <div class="chosen" id="chosen"><span>📄</span><span class="name" id="fname"></span><span class="small" id="fsize"></span></div>
+      </label>
+      <button class="go" type="submit" id="submit" disabled>Upload &amp; preview crop →</button>
     </form>
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">Library</h3>
+    <h3>Library</h3>
     {% if jobs %}
-    <table>
-      <thead><tr><th>Source</th><th>Status</th><th>Clips</th><th></th></tr></thead>
-      <tbody>
+    <div class="lib">
       {% for j in jobs %}
-        <tr>
-          <td>{{ j.source_name or j.job_id }}</td>
-          <td><span class="pill {{ 'ready' if j.status=='ready' else '' }}">{{ j.status }}</span></td>
-          <td>{{ j.n_clips if j.n_clips is not none else '—' }}</td>
-          <td><a href="/job/{{ j.job_id }}">open →</a></td>
-        </tr>
+        {% set cls = 'ready' if j.status=='ready' else ('run' if j.status=='awaiting run' else ('err' if 'error' in j.status else '')) %}
+        <div class="job">
+          <div class="src">{{ j.source_name or j.job_id }}</div>
+          <div class="meta">{{ j.n_clips if j.n_clips is not none else '—' }} clip{{ '' if j.n_clips==1 else 's' }}</div>
+          <span class="pill {{ cls }}">{{ j.status }}</span>
+          <a class="open" href="/job/{{ j.job_id }}">open →</a>
+        </div>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<div class="empty">No videos yet — upload one above.</div>{% endif %}
+    </div>
+    {% else %}<div class="empty">No videos yet — drop one above to get started.</div>{% endif %}
   </div>
 </main>
+<script>
+  const drop=document.getElementById('drop'), file=document.getElementById('file'),
+        chosen=document.getElementById('chosen'), submit=document.getElementById('submit');
+  function human(b){const u=['B','KB','MB','GB'];let i=0;while(b>=1024&&i<3){b/=1024;i++}return b.toFixed(1)+' '+u[i]}
+  function show(){ if(file.files.length){ document.getElementById('fname').textContent=file.files[0].name;
+    document.getElementById('fsize').textContent='· '+human(file.files[0].size);
+    chosen.style.display='flex'; submit.disabled=false; } }
+  file.addEventListener('change',show);
+  ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('drag')}));
+  ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('drag')}));
+  drop.addEventListener('drop',ev=>{ if(ev.dataTransfer.files.length){ file.files=ev.dataTransfer.files; show(); } });
+  document.getElementById('form').addEventListener('submit',()=>{ submit.disabled=true; submit.textContent='Uploading…'; });
+</script>
 </body>
 </html>

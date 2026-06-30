@@ -103,7 +103,7 @@ rendered clips carry **audio**. Driven by the author's switch to a Windows machi
 - [ ] **Phase 5: Windows Cross-Platform Port** - App runs end-to-end on Windows: vendored ffmpeg/ffprobe + prebuilt `whisper-cli.exe` + model, OS-agnostic binary/font resolution, `setup.ps1`
 - [ ] **Phase 6: Interactive Crop Preview Before Run** - Upload no longer auto-starts; a preview page shows the source video with a draggable crop-box overlay (9:16/1:1) and a Run button that starts the pipeline with the chosen offset
 - [ ] **Phase 7: UI Polish + Live Logs** - Cleaner, more legible index + job pages; clear stage progress; readable live log panel
-- [ ] **Phase 8: Render Audio + Review Reframe** - Every rendered clip keeps its audio in all 3 ratios and after re-frame; review-time crop slider works reliably
+- [ ] **Phase 8: Render Audio + Caption Fit + Review Reframe** - Every rendered clip keeps its audio in all 3 ratios and after re-frame; captions fit + sit in the safe area in 9:16/1:1/16:9; review-time crop slider (live box + re-render) works reliably
 
 ### Phase 5: Windows Cross-Platform Port
 **Goal**: The full upload→transcribe→select→render→download flow works on Windows 11 with no package manager: static ffmpeg/ffprobe and prebuilt whisper.cpp vendored under `vendor/`, `config.py` resolves `.exe` binaries + vendored paths, captions fall back to Windows fonts, and `scripts/setup.ps1` reproduces the toolchain.
@@ -131,13 +131,14 @@ rendered clips carry **audio**. Driven by the author's switch to a Windows machi
   2. Stage progress is obvious at a glance (pending/running/done/error)
   3. Live log panel is readable, auto-scrolls, and is clearly labeled
 
-### Phase 8: Render Audio + Review Reframe
-**Goal**: Guarantee audio in every rendered output (all ratios, simple + caption + re-frame paths) and make the review-time crop slider re-render reliably with a quick preview.
+### Phase 8: Render Audio + Caption Fit + Review Reframe
+**Goal**: Guarantee audio in every rendered output (all ratios, simple + caption + re-frame paths); make captions fit and sit in the LinkedIn safe area in each aspect ratio (per-ratio font size, wrap width, bottom margin — not the same absolute size across a tall 9:16 and a wide 16:9); and make the review-time crop slider re-render reliably with a live box preview.
 **Depends on**: Phase 6, Phase 7
 **Success Criteria**:
   1. Every rendered clip (9:16/1:1/16:9) contains an audio stream — verified with ffprobe
   2. Re-rendered clips after a crop tweak still contain audio
-  3. The review-time crop slider re-renders the clip and reloads it with audio intact
+  3. Captions wrap to the frame width, never overflow horizontally, and sit inside the safe area in all 3 ratios (visually verified on the test video)
+  4. The review-time crop slider shows a live crop box and re-renders the clip, reloading it with audio intact
 
 ---
 

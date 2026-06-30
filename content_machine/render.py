@@ -82,7 +82,8 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
 
     png_events = png_events or []
     if not png_events:
-        cmd += ["-t", f"{dur:.3f}", "-vf", cs]
+        # explicit maps so the audio stream is always carried, never dropped
+        cmd += ["-t", f"{dur:.3f}", "-vf", cs, "-map", "0:v:0", "-map", "0:a?"]
     else:
         for e in png_events:
             cmd += ["-loop", "1", "-i", str(e["png"])]

@@ -81,7 +81,7 @@ def job_log(job_id: str):
 def tail(path: Path, lines: int = 200) -> str:
     if not path.exists():
         return ""
-    data = path.read_text(errors="replace").splitlines()
+    data = path.read_text(encoding="utf-8", errors="replace").splitlines()
     return "\n".join(data[-lines:])
 
 

@@ -76,33 +76,56 @@ def wrap_caption(text: str, max_chars: int) -> str:
     return "\n".join(textwrap.wrap(text, width=max_chars)) or text
 
 
+def fit_caption(draw, text: str, font_path: str | None, width: int, height: int):
+    """Pick a font size + wrap so the caption fills a consistent, safe portion of
+    the frame in ANY aspect ratio and never overflows the usable width.
+
+    Font size keys off the SHORTER side (min(w,h)) so a tall 9:16, a square 1:1,
+    and a wide 16:9 — all 1080 on their short side — get the same perceptual size,
+    instead of height-scaling that made 9:16 captions ~2x bigger than 16:9. Text
+    wraps to ~86% of the width (the LinkedIn-safe text column) and the size shrinks
+    only if a very long caption would still be too tall.
+    """
+    usable_w = width * 0.86
+    base = max(30, round(min(width, height) * 0.052))
+    spacing = max(4, round(base * 0.18))
+    for font_size in range(base, 23, -3):
+        font = (ImageFont.truetype(font_path, font_size) if font_path
+                else ImageFont.load_default())
+        # average glyph ~0.52*em for this sans; wrap to the usable column
+        max_chars = max(8, int(usable_w / (font_size * 0.52)))
+        wrapped = wrap_caption(text, max_chars)
+        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, align="center", spacing=spacing)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if tw <= usable_w and th <= height * 0.30:
+            return font, font_size, wrapped, bbox, spacing
+    # fallback: smallest tried
+    return font, font_size, wrapped, bbox, spacing
+
+
 def render_caption_png(text: str, width: int, height: int, out: Path,
                        font_path: str | None = None) -> Path:
-    """Render one full-frame transparent PNG with the caption near the bottom."""
+    """Render one full-frame transparent PNG with the caption in the bottom safe area."""
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font_size = max(36, round(height * 0.045))
     fp = font_path or find_font()
-    font = ImageFont.truetype(fp, font_size) if fp else ImageFont.load_default()
+    font, font_size, wrapped, bbox, spacing = fit_caption(draw, text, fp, width, height)
 
-    max_chars = max(12, int(width / (font_size * 0.6)))
-    wrapped = wrap_caption(text, max_chars)
-
-    # measure block
-    bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, align="center", spacing=8)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (width - tw) / 2 - bbox[0]
-    y = height - th - round(height * 0.10) - bbox[1]
+    y = height - th - round(height * 0.09) - bbox[1]   # ~9% bottom safe margin
 
-    # semi-opaque rounded backing for legibility on any footage
-    pad = round(font_size * 0.4)
+    # semi-opaque rounded backing for legibility on any footage, clamped to frame
+    pad = round(font_size * 0.45)
+    bx0 = max(4, x + bbox[0] - pad)
+    bx1 = min(width - 4, x + bbox[0] + tw + pad)
     draw.rounded_rectangle(
-        [x + bbox[0] - pad, y + bbox[1] - pad, x + bbox[0] + tw + pad, y + bbox[1] + th + pad],
-        radius=pad, fill=(0, 0, 0, 140),
+        [bx0, y + bbox[1] - pad, bx1, y + bbox[1] + th + pad],
+        radius=pad, fill=(0, 0, 0, 150),
     )
     draw.multiline_text((x, y), wrapped, font=font, fill=(255, 255, 255, 255),
-                        align="center", spacing=8,
-                        stroke_width=max(2, font_size // 18), stroke_fill=(0, 0, 0, 255))
+                        align="center", spacing=spacing,
+                        stroke_width=max(2, font_size // 16), stroke_fill=(0, 0, 0, 255))
     img.save(out)
     return out
 
