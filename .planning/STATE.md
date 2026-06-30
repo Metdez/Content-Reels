@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 10
-  total_plans: 10
-  completed_plans: 10
-  percent: 71
+  completed_phases: 11
+  total_plans: 11
+  completed_plans: 11
+  percent: 79
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 33 of 36 — next up (Adopt: word-level timing → cut-snapping); Phases 23–32 complete (10/14). **Frontend track (29–32) DONE.** Feature-adoption track begins (33–34).
+Phase: 34 of 36 — next up (Adopt: word-level karaoke captions via hyperframes); Phases 23–33 complete (11/14).
 Plan: —
-Status: Phase 32 (accessibility WCAG 2.1 AA) shipped — real <button> tabs + aria-pressed, modal role=dialog/focus-trap/ESC/focus-return, slider labels + aria-live, 24px trim handles, wheel scroll-trap fix, drop type/size guard, unified PREVIEW_CAP=420; axe 0 critical/serious (0 total WCAG 2A/AA) on all 3 pages; keyboard nav verified; 201 tests pass; ruff clean. Running autonomously.
-Last activity: 2026-06-30 — Phase 32 complete (A11Y-01…04)
+Status: Phase 33 (word-level cut-snapping) shipped — editor trim boundaries now include whisper words[] (137 vs ~18 pts on seeded job) with segment fallback; +2 tests; 203 pass; ruff clean; live-verified. Running autonomously.
+Last activity: 2026-06-30 — Phase 33 complete (WORD-01)
 
 ### v6 progress
 

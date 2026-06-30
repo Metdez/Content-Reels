@@ -553,10 +553,24 @@ def _clip_editor_payload(job: Job, idx: int) -> dict:
     else:
         cap_segs = captions.clip_caption_events(segs, start, end)
 
-    # snap points for trim handles: every segment start + end (source time), unique+sorted
-    pts = sorted({0.0, float(duration)}
-                 | {round(float(s["start"]), 3) for s in segs}
-                 | {round(float(s["end"]), 3) for s in segs})
+    # Snap points for the trim handles (source time, unique+sorted). Prefer the
+    # per-word boundaries whisper already emits in transcript.json (WORD-01) so a
+    # trim can land on a word edge, not just a sentence edge; segment start/end are
+    # always included as the fallback when a segment has no word timing.
+    pts_set = {0.0, float(duration)}
+    for s in segs:
+        try:
+            pts_set.add(round(float(s["start"]), 3))
+            pts_set.add(round(float(s["end"]), 3))
+        except (KeyError, TypeError, ValueError):
+            continue
+        for w in s.get("words") or []:
+            try:
+                pts_set.add(round(float(w["start"]), 3))
+                pts_set.add(round(float(w["end"]), 3))
+            except (KeyError, TypeError, ValueError):
+                continue
+    pts = sorted(pts_set)
     return {
         "index": idx, "title": clip.get("title", ""),
         "orig_start": clip.get("start", 0), "orig_end": clip.get("end", 0),
