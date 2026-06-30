@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v5.1
-milestone_name: — Quick-Crop Parity & Render Visibility
-status: complete
-last_updated: "2026-06-30T15:10:00.000Z"
+milestone: v6
+milestone_name: Full Quality Pass — Test, Harden, Improve, Adopt
+status: planning
+last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 14
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Milestone v5.1 — Quick-Crop Parity & Render Visibility (Phases 20–22) complete. Brought the job-page Quick-crop modal to full editor parity and made re-render legible. v1.0–v5 complete and verified live.
+**Current focus:** Milestone v6 — Full Quality Pass: Test, Harden, Improve, Adopt (Phases 23–36). Senior-engineer ownership pass: exhaustive automated + Playwright coverage, fix every defect surfaced, improve against an explicit "better" standard, adopt worthwhile repo features. v1.0–v5.1 complete and verified live.
 
 ## Current Position
 
-Phase: 22 of 22 complete — milestone v5.1 delivered (recorded retroactively)
+Phase: 23 of 36 — first v6 phase (Test Harness & CI Foundation), about to plan/execute
 Plan: —
-Status: All 3 v5.1 phases (20–22) shipped + verified live on Windows with real NVENC via Playwright; 58 tests pass. The Quick-crop modal (`✂ Quick crop` on each clip card) now has zoom + Y + X with a live preview, scroll-zoom + drag-pan, a non-blocking re-render driven by `/edit` + `/rerender-status` (progress bar + per-aspect status), and a live `/log` tail; finished previews stop re-buffering (poll-in-place). Commits on main: 6f94246 (P20), fd5c298 (P21), 148fa06 (P22).
-Last activity: 2026-06-30 — Phases 20–22 complete (EDITUX-08…12); milestone v5.1 complete
+Status: v6 roadmap created (14 phases, 41 requirements mapped); discovery inventory at .planning/v6-DISCOVERY.md; running autonomously
+Last activity: 2026-06-30 — Milestone v6 started (roadmap + requirements committed)
 
 ### Verified live (v5.1, Windows 11, real NVENC + Playwright)
 

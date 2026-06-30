@@ -8,23 +8,27 @@ A local-first webapp that turns a long video (talk, webinar, podcast) into short
 
 Drop in one video and get back several genuinely good, caption-burned clips in multiple aspect ratios — without uploading the source anywhere or paying per-token API costs.
 
-## Current Milestone: v5.1 — Quick-Crop Parity & Render Visibility
+## Current Milestone: v6 — Full Quality Pass: Test, Harden, Improve, Adopt
 
-**Status:** Complete (shipped 2026-06-30) — recorded retroactively. Continues v5's editing-UX work.
+**Status:** Planning → executing autonomously (started 2026-06-30). Phases 23–36.
 
-**Goal:** Bring the job-page **Quick-crop** modal to full clip-editor parity and make re-render state visible everywhere it was previously a frozen, silent wait.
+**Goal:** Take full ownership of the codebase as a senior engineer: build exhaustive automated + Playwright coverage, fix every defect surfaced, improve against an explicit "better" standard, and adopt the worthwhile features from the referenced repos — so the whole app works end to end with no known broken functionality.
 
-**Target features (all delivered):**
-- Quick-crop framing parity: the Quick-crop modal gains zoom + Position-Y (alongside X), per-aspect framing, and a live WYSIWYG output-preview canvas — reusing the same crop math (`computeCrop`/`drawBox`/`drawOut`) as the full editor and the pre-run preview.
-- Non-blocking Quick-crop re-render: the modal posts per-aspect transforms to the existing non-blocking `/edit` endpoint and polls `/rerender-status` instead of the old blocking `/reframe`, so the UI stays interactive.
-- Render visibility in the modal: a progress bar + %, per-aspect queued/rendering/done/error rows, and a live tail of `/api/job/{id}/log` — the user always sees what's happening during the long render.
-- Direct-manipulation in Quick-crop: scroll-wheel zooms and drag pans the preview (mirrors the full editor), with the sliders kept as a synced fallback.
-- Poll hardening: editor and job-page polls update in place so finished `<video>` elements stop re-buffering from zero (a major source of "rendering takes forever").
+**Target outcomes (14 phases):**
+- Test foundation: pytest-cov baseline, Starlette `TestClient` fixtures, a Playwright harness with seeded job fixtures, `ruff` lint, and CI (Phase 23).
+- Close coverage gaps: unit tests for `config.py`/`cli.py`/`logging_setup.py`/render orchestration/captions, and HTTP-layer integration tests for every endpoint (Phases 24–25).
+- Backend reliability: atomic+locked manifest writes, non-blocking upload, persistent error state + graceful lifecycle, input validation + `claude -p` retry, concurrency cap (Phases 26–28).
+- Frontend robustness: one shared crop-math module with a Python parity test, error surfacing instead of silent hangs, caption/audio correctness, and a WCAG 2.1 AA accessibility pass (Phases 29–32).
+- Repo-feature adoption: consume whisper's already-emitted `words[]` for word-boundary cut-snapping, and finish the hyperframes path for word-level karaoke captions with the PNG fallback intact (Phases 33–34).
+- Exhaustive Playwright E2E across all three pages + a final real-run verification and docs pass (Phases 35–36).
 
-**Key context:** Pure frontend — no backend changes; reused the v5 `/edit` + `/rerender-status` + `/log` infrastructure. The Quick-crop modal was the old pre-v5 path (X-offset only, blocking `/reframe`, zero feedback), which is what the user actually experienced as "the edit feature is just not working." Output paths are stable (only file content changes on re-render), so the card refresh is a shared-token cache-bust, NOT a reconcile-sig clear (which would rebuild an un-busted `<video>`). All verified live on Windows with real NVENC via Playwright; 58 tests pass.
+**"Better" criteria (explicit, priority order):** Correctness → Reliability → Error-handling/UX clarity → Accessibility (WCAG 2.1 AA) → Test coverage → Performance → Code quality. A change ships only if it improves ≥1 criterion without regressing another, and is covered by a test.
 
-### Previous milestone
+**Key context:** Derived from a full Phase 0 discovery (see `.planning/v6-DISCOVERY.md`). Fix phases are regression-first (failing test → fix → confirm) so no phase ships red. Confirmed out of scope: speaker-aware CV auto-reframe (REFRAME-01), LinkedIn auto-publish, multi-user, full NLE. `DeepAgentLLMtxt.md` is currently empty (0 bytes) — left in place with a note, not actionable.
 
+### Previous milestones
+
+- **v5.1 — Quick-Crop Parity & Render Visibility (Phases 20–22):** Shipped. Quick-crop modal brought to full editor parity (zoom+Y+X+live preview), non-blocking re-render with progress/per-aspect status/live log, scroll/drag direct manipulation, poll-in-place hardening. (EDITUX-08…12)
 - **v5 — Editing UX Revamp (Phases 17–19):** Shipped. Background re-render + live editor progress + queue, direct-manipulation framing + magnifier, edit-flow state pill + readable errors. (EDITUX-01…07)
 
 ## Requirements
@@ -107,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-30 — milestone v5.1 recorded (Quick-crop parity & render visibility: zoom+Y+live preview, non-blocking render with progress bar + per-aspect status + live log, scroll/drag direct manipulation, poll-in-place hardening). Shipped retroactively; v5 complete.*
+*Last updated: 2026-06-30 — milestone v6 started (Full Quality Pass: Test, Harden, Improve, Adopt — Phases 23–36). Derived from `.planning/v6-DISCOVERY.md`.*

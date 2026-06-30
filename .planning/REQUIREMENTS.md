@@ -278,6 +278,103 @@ Explicitly excluded. Documented to prevent scope creep.
 - Delivered: 5 Done ✓
 - Unmapped: 0 ✓
 
+## v6 Requirements
+
+Milestone v6 — Full Quality Pass: Test, Harden, Improve, Adopt (Phases 23–36). Derived from `.planning/v6-DISCOVERY.md`. Fix requirements are regression-first.
+
+### Test foundation & coverage
+- [ ] **QA-01**: The test suite reports line coverage (pytest-cov) with a recorded baseline.
+- [ ] **QA-02**: A reusable Starlette `TestClient` fixture exists for exercising endpoints at the request boundary.
+- [ ] **QA-03**: A Playwright harness can drive the running app against a seeded job fixture (no multi-minute render required).
+- [ ] **QA-04**: `ruff` lint is configured and passes on `content_machine/` and `tests/`.
+- [ ] **QA-05**: A CI workflow runs the test suite (and lint) on push.
+- [ ] **QA-06**: `config.py` binary/model resolution + `require_tool` error paths are unit-tested.
+- [ ] **QA-07**: `cli.py` commands (`ingest`/`select`/`render`/`serve`) are smoke-tested via Typer's runner.
+- [ ] **QA-08**: `logging_setup.py` `stream_run`/`run`/`tail`/`job_log` are unit-tested with a real trivial subprocess.
+- [ ] **QA-09**: Render orchestration (`render_clip`/`render_job`/`rerender_one`) is tested with the encode layer stubbed.
+- [ ] **QA-10**: Captions (`fit_caption`, hyperframes-gated composition path) are unit-tested.
+- [ ] **QA-11**: `select.run_claude` failure handling and transcribe binary-layer parsing are tested (gated/skipped if binaries absent).
+
+### HTTP API integration
+- [ ] **API-01**: `/upload` is tested for valid video (303 + manifest) and rejection of missing file, bad extension, dotfile, and path-traversal names.
+- [ ] **API-02**: `/api/job/{id}/run` is tested for start (ok), re-run (409), unknown job (404), and missing source (400).
+- [ ] **API-03**: `/api/job/{id}`, `/log`, and `/clip/{idx}` GET are tested including unknown-job/unknown-idx (404) and the `lines` param.
+- [ ] **API-04**: `/clip/{idx}/edit` (too-short trim → 400; valid → queued) and `/rerender-status` are tested.
+- [ ] **API-05**: `/download/{id}/{idx}/{aspect}` (200 + 404 on missing aspect), `/media` scoping, and the legacy `/reframe` route are tested.
+
+### Backend reliability
+- [ ] **REL-01**: `job.json`/`render.json` writes are atomic (temp-file + `os.replace`) and guarded by a per-job lock; a poll during high-frequency progress writes never reads truncated JSON.
+- [ ] **REL-02**: Two clips of one job re-rendering concurrently both persist their `render.json` entries (no lost update).
+- [ ] **REL-03**: `/upload` no longer blocks the event loop (hashing/copy off the async path); concurrent progress polls stay responsive during a large upload.
+- [ ] **REL-04**: In-flight pipeline errors persist to the manifest and survive a restart; `_RERENDER` reconciles from disk on startup; shutdown stops background work cleanly.
+- [ ] **REL-05**: Concurrent renders are capped (semaphore/queue) so simultaneous jobs don't exhaust GPU encode sessions.
+
+### Input validation & hardening
+- [ ] **VAL-01**: Trim edits clamp `start≥0` and `end≤duration`; `zoom` has an enforced upper bound.
+- [ ] **VAL-02**: `claude -p` selection retries transient failures with backoff and a transcript-scaled timeout; one bad chunk doesn't fail the whole selection.
+- [ ] **VAL-03**: Concurrent same-name uploads no longer collide on the staging path.
+- [ ] **VAL-04**: A fully-silent / empty-transcript video surfaces the friendly "no clip-worthy moments" message, not a raw exception.
+- [ ] **VAL-05**: `/media` no longer serves manifests/transcripts/audio (scoped to media output types) for defense-in-depth.
+- [ ] **VAL-06**: `require_tool` hint strings are platform-correct (no `brew install` on Windows).
+
+### Shared crop math
+- [ ] **CROP-01**: `computeCrop`/`drawBox`/`drawOut` live in one shared JS module imported by both templates, and use server `source_dims` (not the video element's intrinsic dims).
+- [ ] **CROP-02**: A golden-vector parity test asserts the JS crop math matches Python `render.compute_crop` exactly, and runs in CI.
+
+### Frontend robustness & correctness
+- [ ] **FE-01**: Polling/edit failures surface a readable "connection lost / retrying" state; polling stops on 404 with a retry cap instead of looping forever.
+- [ ] **FE-02**: The pre-run Run error uses an inline surface, not a blocking `alert()`.
+- [ ] **FE-03**: Dirty markers are cleared only after the edit POST is confirmed, so a failed apply can be retried without re-nudging.
+- [ ] **FE-04**: The editor boots safely when `captions`/`audio`/`transforms` are missing (real error state, no stuck "Loading editor…"); a failed modal edit cleans up its half-open progress UI.
+- [ ] **FE-05**: "Re-derive captions" actually recomputes caption segments for the current trim window (real server behavior), or is removed if not delivered.
+- [ ] **FE-06**: The editor source video has scrub controls and can be un-muted so audio edits are auditionable.
+- [ ] **FE-07**: Caption time inputs are validated (numeric, `start<end`, within trim) with inline error.
+- [ ] **FE-08**: Output media is cache-busted consistently (server-provided version), so reconcile-rebuilt cards never show stale media.
+
+### Accessibility (WCAG 2.1 AA where feasible)
+- [ ] **A11Y-01**: Aspect tabs, clip tabs, and the modal close are real keyboard-operable `<button>`s with roles/labels.
+- [ ] **A11Y-02**: The Quick-crop modal has `role="dialog"`/`aria-modal`, a focus trap, ESC-to-close, and focus return.
+- [ ] **A11Y-03**: Sliders are labeled, progress/log regions are `aria-live`, and status is conveyed by text+icon, not color alone.
+- [ ] **A11Y-04**: Touch targets meet ≥24px (trim handles), wheel-zoom no longer traps page scroll, drop enforces video type/size, and preview CAP is unified across surfaces.
+
+### Repo-feature adoption
+- [ ] **WORD-01**: Selection and editor trim snap to word boundaries using the already-emitted `transcript.json` `words[]` (with segment-level fallback when word timing is absent/poor).
+- [ ] **CAPS-01**: Word-level karaoke captions render via the hyperframes overlay path, driven by `words[]`.
+- [ ] **CAPS-02**: The hyperframes caption path is provisioned (Chrome/template) and gated behind a caption mode, with the Pillow PNG path intact as an automatic fallback.
+
+### Exhaustive E2E + final verification
+- [ ] **E2E-01**: Playwright covers `index.html` — upload enable/disable, drag/drop, size formatting, library pills, submit.
+- [ ] **E2E-02**: Playwright covers the job preview state — aspect tabs, zoom/X/Y, slack-disable, reset, copy-to-all, Run.
+- [ ] **E2E-03**: Playwright covers progress + clips — master/step bars, log autoscroll, reconcile-in-place, clip tabs, downloads, done/error.
+- [ ] **E2E-04**: Playwright covers the Quick-crop modal — open/seed, tabs, scroll-zoom, drag-pan, re-render lifecycle, card refresh, error state.
+- [ ] **E2E-05**: Playwright covers the editor — reframe (slider+scroll+drag), magnifier, trim+snap, playhead/preview, captions, audio, apply, flow pill, resume.
+- [ ] **E2E-06**: Playwright covers edge/error states (zero dims, missing captions, invalid inputs, 404 job).
+- [ ] **DONE-01**: A full real run (upload→render→edit→re-render→download) passes end to end; README/BENCHMARKS updated; applied improvement criteria documented; milestone audit clean.
+
+### v6 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| QA-01, QA-02, QA-03, QA-04, QA-05 | Phase 23 | Pending |
+| QA-06, QA-07, QA-08, QA-09, QA-10, QA-11 | Phase 24 | Pending |
+| API-01, API-02, API-03, API-04, API-05 | Phase 25 | Pending |
+| REL-01, REL-02 | Phase 26 | Pending |
+| REL-03, REL-04, REL-05 | Phase 27 | Pending |
+| VAL-01, VAL-02, VAL-03, VAL-04, VAL-05, VAL-06 | Phase 28 | Pending |
+| CROP-01, CROP-02 | Phase 29 | Pending |
+| FE-01, FE-02, FE-03, FE-04 | Phase 30 | Pending |
+| FE-05, FE-06, FE-07, FE-08 | Phase 31 | Pending |
+| A11Y-01, A11Y-02, A11Y-03, A11Y-04 | Phase 32 | Pending |
+| WORD-01 | Phase 33 | Pending |
+| CAPS-01, CAPS-02 | Phase 34 | Pending |
+| E2E-01, E2E-02, E2E-03, E2E-04, E2E-05, E2E-06 | Phase 35 | Pending |
+| DONE-01 | Phase 36 | Pending |
+
+**v6 Coverage:**
+- v6 requirements: 41 total
+- Mapped to phases: 41 (every requirement → exactly one phase)
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-30 — v5.1 requirements added (5 reqs, EDITUX-08…12 → Phases 20–22, all Done, recorded retroactively)*
+*Last updated: 2026-06-30 — v6 requirements added (41 reqs, QA/API/REL/VAL/CROP/FE/A11Y/WORD/CAPS/E2E/DONE → Phases 23–36)*

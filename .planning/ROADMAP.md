@@ -490,7 +490,215 @@ All 5 v5.1 requirements mapped to exactly one phase. No orphans, no duplicates.
 **Total: 5/5 mapped ✓**
 
 ---
+
+## Milestone v6 — Full Quality Pass: Test, Harden, Improve, Adopt (Phases 23–36)
+
+Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISCOVERY.md`. A senior-engineer ownership pass: exhaustive automated + Playwright coverage, fix every defect surfaced, improve against an explicit "better" standard, and adopt the worthwhile repo features. Fix phases are **regression-first** (write the failing test → fix → confirm) so no phase ships red. Execution is sequential 23 → 36, but phases group into tracks: foundation (23) → coverage (24–25) → backend reliability (26–28) → frontend (29–32) → repo adoption (33–34) → capstone (35–36).
+
+**"Better" criteria (priority order):** Correctness → Reliability → Error-handling/UX clarity → Accessibility (WCAG 2.1 AA) → Test coverage → Performance → Code quality. A change ships only if it improves ≥1 criterion without regressing another, and is covered by a test.
+
+- [ ] **Phase 23: Test Harness & CI Foundation** - pytest-cov baseline, `TestClient` fixtures, Playwright harness + seeded job fixtures, `ruff` lint, CI workflow
+- [ ] **Phase 24: Backend Unit Coverage** - tests for `config`/`cli`/`logging_setup`/render orchestration/captions/`run_claude`/transcribe layers
+- [ ] **Phase 25: HTTP API Integration Tests** - every endpoint at the request boundary, incl. validation/404/409/400/traversal/legacy
+- [ ] **Phase 26: Reliability — Atomic Manifests + Locking** - atomic temp-rename writes + per-job lock + tolerant reads; cross-clip `render.json` integrity
+- [ ] **Phase 27: Reliability — Non-blocking Upload + State Persistence + Lifecycle** - upload off the event loop, persistent error state + restart reconcile + graceful shutdown, render concurrency cap
+- [ ] **Phase 28: Input Validation & Hardening** - trim/zoom bounds, `claude -p` retry, upload-name collision, friendly empty-transcript, `/media` scoping, platform hints
+- [ ] **Phase 29: Shared Crop-Math Module + Parity Test** - one `crop.js`, uses `source_dims`, golden-vector parity vs Python in CI
+- [ ] **Phase 30: Frontend Robustness — Error Surfacing + Polling** - surface failures, stop 404 loops, retry cap, replace `alert()`, keep dirty until POST ok, safe boot
+- [ ] **Phase 31: Frontend Correctness — Captions, Audio, Validation** - real re-derive-for-trim, source scrub + audition, caption time validation, consistent cache-busting
+- [ ] **Phase 32: Accessibility Pass (WCAG 2.1 AA)** - real buttons, dialog focus-trap+ESC, labels+aria-live, touch targets, drop guard, CAP unification
+- [ ] **Phase 33: Adopt — Word-level Timing → Cut-snapping** - consume `words[]` for word-boundary snap in selection + editor trim
+- [ ] **Phase 34: Adopt — Word-level Karaoke Captions (hyperframes)** - finish hyperframes path with word-highlight; PNG fallback intact
+- [ ] **Phase 35: Exhaustive Playwright E2E Suite** - every interaction/edge/error state across all 3 pages + one real short render
+- [ ] **Phase 36: Final Integration Verification & Docs** - full real run, README/BENCHMARKS, document criteria, milestone audit
+
+### Phase 23: Test Harness & CI Foundation
+**Goal**: Stand up the testing foundation everything else depends on: coverage measurement, an HTTP-layer test client, a headless Playwright harness that drives the app against a pre-seeded job fixture (so E2E never waits on a 5-minute render), a lint gate, and CI.
+**Depends on**: v5.1 (existing 58-test suite)
+**Requirements**: QA-01, QA-02, QA-03, QA-04, QA-05
+**Entry**: 58 tests pass.
+**Success Criteria** (what must be TRUE):
+  1. `pytest` reports line coverage with a committed baseline number; `pytest-cov` is a dev dependency.
+  2. A reusable `TestClient` fixture exists and a smoke test exercises at least `GET /`.
+  3. A seeded-job fixture (manifest + fake outputs on disk) lets a Playwright spec load `/job/{id}` and the editor without running the pipeline; the harness is documented (`make e2e` or equivalent).
+  4. `ruff` is configured and green on `content_machine/` + `tests/`; a CI workflow runs lint + tests on push.
+**Plans**: TBD
+**UI hint**: no
+**Exit**: coverage baseline + TestClient + Playwright harness + ruff + CI all committed and green.
+
+### Phase 24: Backend Unit Coverage
+**Goal**: Close the unit-test gaps on the modules with zero/low coverage, with external binaries stubbed so tests stay fast and deterministic.
+**Depends on**: Phase 23
+**Requirements**: QA-06, QA-07, QA-08, QA-09, QA-10, QA-11
+**Success Criteria**:
+  1. `config.py` (binary/model resolution, `require_tool` error), `cli.py` (all 4 commands via Typer runner), and `logging_setup.py` (`stream_run`/`run`/`tail`/`job_log` against a trivial real subprocess) have passing tests.
+  2. Render orchestration (`render_clip`/`render_job`/`rerender_one`) is tested with the encode layer stubbed, asserting manifest shape + progress callbacks.
+  3. `captions.fit_caption` and the hyperframes-gated composition path, plus `select.run_claude` failure handling and transcribe parsing, are tested (binary-dependent tests skip cleanly when absent).
+  4. Coverage rises measurably over the Phase 23 baseline.
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 25: HTTP API Integration Tests
+**Goal**: Exercise every endpoint at the request boundary via `TestClient`, asserting status codes, validation, and error paths — surfacing any wiring bugs that unit tests miss.
+**Depends on**: Phase 23
+**Requirements**: API-01, API-02, API-03, API-04, API-05
+**Success Criteria**:
+  1. `/upload` accepts a valid video (303 + manifest `awaiting_run`) and rejects missing file / bad extension / dotfile / traversal name (400).
+  2. `/run` returns ok on start, 409 on re-run, 404 on unknown job, 400 on missing source; `/api/job/{id}`, `/log` (with `lines`), and `/clip/{idx}` GET handle unknown job/idx with 404.
+  3. `/clip/{idx}/edit` rejects <0.5s trim (400) and queues a valid edit; `/rerender-status` returns the expected shape; `/download` 200s a present aspect and 404s a missing one.
+  4. `/media` scoping and the legacy `/reframe` route have explicit tests (documenting current behavior before any change).
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 26: Reliability — Atomic Manifests + Locking
+**Goal**: Eliminate the truncated-read 500s and cross-clip lost-updates: make all manifest writes atomic (temp file + `os.replace`) and serialize read-modify-write behind a per-job lock.
+**Depends on**: Phase 25 (regression tests land here)
+**Requirements**: REL-01, REL-02
+**Success Criteria**:
+  1. `job.json` and `render.json` are written atomically; a stress test polling while progress writes fire at high frequency never observes a JSON parse error.
+  2. Two clips of one job re-rendering concurrently both retain their `render.json` entries (no clobber) — proven by a regression test that previously failed.
+  3. Reads tolerate a momentary missing/temp file (retry/last-good) rather than 500ing; existing tests stay green.
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 27: Reliability — Non-blocking Upload + State Persistence + Lifecycle
+**Goal**: Keep the event loop responsive during uploads, make failure state survive restarts, and shut down background work cleanly.
+**Depends on**: Phase 26
+**Requirements**: REL-03, REL-04, REL-05
+**Success Criteria**:
+  1. `/upload` no longer performs synchronous whole-file hashing/copy on the async path; a test confirms a concurrent request is served while a large upload is in flight.
+  2. An in-flight pipeline error is persisted to the manifest and is still surfaced after a simulated restart; `_RERENDER` reconciles from `render.json` on startup.
+  3. A render concurrency cap (semaphore/queue) bounds simultaneous encodes; shutdown stops daemon work without leaving the manifest mid-write.
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 28: Input Validation & Hardening
+**Goal**: Validate and bound all user/edit inputs, make selection resilient, and clean up small correctness/portability issues.
+**Depends on**: Phase 26
+**Requirements**: VAL-01, VAL-02, VAL-03, VAL-04, VAL-05, VAL-06
+**Success Criteria**:
+  1. Trim clamps `start≥0`/`end≤duration` and `zoom` is upper-bounded (no tiny-crop blur); invalid edits are rejected with a clear error.
+  2. `claude -p` selection retries transient failures with backoff and a transcript-scaled timeout; one failed chunk degrades gracefully instead of failing the whole stage.
+  3. Concurrent same-name uploads no longer collide; a silent/empty transcript yields the friendly "no clip-worthy moments" message; `require_tool` hints are platform-correct; `/media` no longer serves manifests/transcripts/audio.
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 29: Shared Crop-Math Module + Parity Test
+**Goal**: Collapse the three copies of the crop math to one shared JS module sourced from `source_dims`, locked to the Python renderer by a golden-vector parity test in CI.
+**Depends on**: Phase 23 (harness)
+**Requirements**: CROP-01, CROP-02
+**Success Criteria**:
+  1. `computeCrop`/`drawBox`/`drawOut` live in one module imported by `job.html` and `editor.html`; both use server `source_dims`, not the `<video>` intrinsic dims.
+  2. A golden-vector fixture generated from Python `render.compute_crop` asserts JS parity (pixel-exact) across all three aspects and a range of `{zoom,x,y}`; it runs in CI.
+  3. Existing framing behavior is unchanged (preview still matches a re-rendered frame) — verified live.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 30: Frontend Robustness — Error Surfacing + Polling
+**Goal**: No more silent hangs — every poll/edit failure surfaces a readable state, infinite loops stop, and dirty intent survives a failed apply.
+**Depends on**: Phase 29
+**Requirements**: FE-01, FE-02, FE-03, FE-04
+**Success Criteria**:
+  1. A failed `/api/job`/`rerender-status`/`/log` poll shows a "connection lost / retrying" surface; polling stops on 404 with a retry cap; the pill never stays "⟳ Rendering…" forever on a transient error.
+  2. The pre-run Run error is inline (no blocking `alert()`); editor dirty markers clear only after the edit POST is confirmed `ok`.
+  3. The editor boots to a real error state (not a stuck "Loading editor…") when `captions`/`audio`/`transforms` are missing; a failed modal edit tears down its half-open progress UI.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 31: Frontend Correctness — Captions, Audio, Validation
+**Goal**: Make the editor's caption/audio editing actually correct and auditable, and cache-bust media consistently.
+**Depends on**: Phase 30
+**Requirements**: FE-05, FE-06, FE-07, FE-08
+**Success Criteria**:
+  1. "Re-derive captions" recomputes segments for the current trim window via real server behavior (or is removed if not delivered) — it no longer silently no-ops.
+  2. The editor source video has scrub controls and can be un-muted, so mute/volume edits are auditionable before re-render.
+  3. Caption time inputs are validated (numeric, `start<end`, within trim) with an inline error; output media carries a server-provided version so reconcile-rebuilt cards never show stale frames.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 32: Accessibility Pass (WCAG 2.1 AA)
+**Goal**: Make the three pages keyboard- and screen-reader-operable and touch-friendly, to WCAG 2.1 AA where feasible.
+**Depends on**: Phase 30
+**Requirements**: A11Y-01, A11Y-02, A11Y-03, A11Y-04
+**Success Criteria**:
+  1. Aspect tabs, clip tabs, and modal close are real keyboard-operable buttons with roles/labels; the modal has `role="dialog"`/`aria-modal`, a focus trap, ESC-to-close, and focus return.
+  2. Sliders are labeled, progress/log are `aria-live`, and state is text+icon (not color alone); an automated a11y check (e.g. axe via Playwright) passes with no critical violations on each page.
+  3. Trim handles meet ≥24px touch targets, wheel-zoom no longer traps page scroll, the index drop enforces video type/size, and the preview CAP is unified across modal/editor/card.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 33: Adopt — Word-level Timing → Cut-snapping
+**Goal**: Put the already-persisted per-word timings to work — snap clip and trim boundaries to word edges, with a clean fallback when word timing is missing or poor.
+**Depends on**: Phase 28 (validation), Phase 26 (manifest safety)
+**Requirements**: WORD-01
+**Success Criteria**:
+  1. Selection boundary-snapping and editor trim snapping prefer `transcript.json` `words[]` boundaries over segment boundaries when available.
+  2. When `words[]` is absent or visibly unreliable, the code falls back to the existing segment-level snap (no regression on a word-timing-poor transcript).
+  3. A test asserts word-boundary snapping on a fixture transcript with known word times; verified live on EnlayeParis.mp4.
+**Plans**: TBD
+**UI hint**: yes
+**Research flag**: validate whisper.cpp base.en word-timing accuracy on the test video before relying on it; budget a fallback if drift is large.
+
+### Phase 34: Adopt — Word-level Karaoke Captions (hyperframes)
+**Goal**: Finish the already-wired hyperframes path into a reliable word-highlight (karaoke) caption mode driven by `words[]`, keeping the Pillow PNG path as an automatic fallback.
+**Depends on**: Phase 33 (word timings), existing `captions.py` hyperframes scaffolding
+**Requirements**: CAPS-01, CAPS-02
+**Success Criteria**:
+  1. A karaoke caption mode renders word-by-word highlighting via the hyperframes overlay, composited correctly over the cropped clip in all three aspects.
+  2. The hyperframes runtime is provisioned (Chrome/template) by setup or documented vendoring; on any hyperframes failure the render transparently falls back to PNG overlay captions (existing guarantee preserved).
+  3. The mode is selectable (run options / editor) and gated; a real EnlayeParis clip renders karaoke captions, ffprobe-validated; PNG fallback still works when hyperframes is forced off.
+**Plans**: TBD
+**UI hint**: yes
+**Research flag**: confirm the installed hyperframes player `onFrame`/word-highlight contract against the vendored version; Chrome provisioning is the freshest unknown.
+
+### Phase 35: Exhaustive Playwright E2E Suite
+**Goal**: The capstone test pass — automate every interaction, edge case, and error state enumerated in discovery across all three pages, plus one real short render to prove the live pipeline.
+**Depends on**: Phases 29–34 (app hardened + features in)
+**Requirements**: E2E-01, E2E-02, E2E-03, E2E-04, E2E-05, E2E-06
+**Success Criteria**:
+  1. Playwright specs pass for: index (upload/drag/library), job preview (tabs/zoom/X/Y/slack/reset/copy/Run), progress+clips (bars/log/reconcile/tabs/download/done+error), Quick-crop modal (seed/tabs/scroll-zoom/drag-pan/re-render/refresh/error), and the editor (reframe all 3 input methods/magnifier/trim+snap/playhead/captions/audio/apply/flow pill/resume).
+  2. Edge/error specs pass: zero dims, missing captions, invalid caption/trim input, 404 job (polling stops with a surface).
+  3. At least one spec runs a real short render end-to-end and asserts valid outputs; the whole suite runs in CI (real-render spec may be marked slow/optional in CI but must pass locally).
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 36: Final Integration Verification & Docs
+**Goal**: Prove the whole product works end to end on a real run, document the improvements and criteria applied, and pass the milestone audit.
+**Depends on**: Phase 35
+**Requirements**: DONE-01
+**Success Criteria**:
+  1. A full real run (upload → transcribe → select → render → edit → re-render → download) completes with valid outputs in all three aspects (ffprobe-verified).
+  2. README + BENCHMARKS reflect v6 (new test/lint/CI commands, karaoke caption mode, reliability notes); the applied "better" criteria and what changed under each are documented; `DeepAgentLLMtxt.md` empty-state noted.
+  3. Full `pytest` + Playwright suites green; no known broken functionality; `/gsd-audit-milestone` is clean.
+**Plans**: TBD
+**UI hint**: no
+
+## v6 Coverage
+
+All 41 v6 requirements mapped to exactly one phase. No orphans, no duplicates.
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 23. Test Harness & CI | QA-01, QA-02, QA-03, QA-04, QA-05 | 5 |
+| 24. Backend Unit Coverage | QA-06, QA-07, QA-08, QA-09, QA-10, QA-11 | 6 |
+| 25. HTTP API Integration | API-01, API-02, API-03, API-04, API-05 | 5 |
+| 26. Atomic Manifests + Locking | REL-01, REL-02 | 2 |
+| 27. Upload + State + Lifecycle | REL-03, REL-04, REL-05 | 3 |
+| 28. Validation & Hardening | VAL-01, VAL-02, VAL-03, VAL-04, VAL-05, VAL-06 | 6 |
+| 29. Shared Crop Math + Parity | CROP-01, CROP-02 | 2 |
+| 30. FE Robustness | FE-01, FE-02, FE-03, FE-04 | 4 |
+| 31. FE Correctness | FE-05, FE-06, FE-07, FE-08 | 4 |
+| 32. Accessibility | A11Y-01, A11Y-02, A11Y-03, A11Y-04 | 4 |
+| 33. Word-level Cut-snapping | WORD-01 | 1 |
+| 34. Karaoke Captions | CAPS-01, CAPS-02 | 2 |
+| 35. Playwright E2E Suite | E2E-01, E2E-02, E2E-03, E2E-04, E2E-05, E2E-06 | 6 |
+| 36. Final Verification & Docs | DONE-01 | 1 |
+
+**Total: 41/41 mapped ✓**
+
+---
 *Roadmap created: 2026-06-29 — granularity: coarse, 4 phases, sequential numbering*
 *Updated: 2026-06-30 — v3 milestone appended (Phases 9–12: per-aspect zoom/crop + clip editor + progress bars); 15/15 v3 requirements mapped*
 *Updated: 2026-06-30 — v5 milestone appended (Phases 17–19: background re-render + live progress, direct-manipulation framing + magnifier, flow polish); 7/7 v5 requirements mapped*
 *Updated: 2026-06-30 — v5.1 milestone appended (Phases 20–22: poll-in-place hardening, Quick-crop parity + live progress/logs, direct manipulation); 5/5 v5.1 requirements mapped; recorded retroactively (all shipped)*
+*Updated: 2026-06-30 — v6 milestone appended (Phases 23–36: full quality pass — test harness/CI, backend+API coverage, reliability + validation hardening, shared crop math, FE robustness/correctness/a11y, word-timing + karaoke captions, exhaustive Playwright E2E, final verification); 41/41 v6 requirements mapped*
