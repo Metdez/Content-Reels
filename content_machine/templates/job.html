@@ -130,6 +130,7 @@
   .rasp.error .dot{background:var(--err)} .rasp.error .st{color:var(--err)}
   .modal pre#mlog{margin:0;padding:12px 14px;max-height:190px;overflow:auto;
     font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d4e3;white-space:pre-wrap;background:#0a0d12}
+  #moutframe{cursor:grab;touch-action:none} #moutframe.grabbing{cursor:grabbing}
 </style>
 </head>
 <body>
@@ -154,6 +155,7 @@
       <p class="panelcap">Live output preview <span style="color:var(--mut);font-weight:400;text-transform:none;letter-spacing:0">— exact crop</span></p>
       <div class="outframe" id="moutframe"><span class="ratiotag" id="mouttag">9:16</span>
         <canvas id="moutcv"></canvas></div>
+      <p class="hint" style="margin-top:7px">Scroll to zoom · drag to pan · or use the sliders</p>
     </div>
   </div>
   <div class="sliderrow"><span>Zoom</span>
@@ -544,6 +546,29 @@ function mGo(){
 $('mcopy').addEventListener('click',()=>{ const t=MTF[maspect]; ASPECTS.forEach(a=>{MTF[a]={zoom:t.zoom,x:t.x,y:t.y};}); mredraw(); });
 $('mgo').addEventListener('click',mGo);
 startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],360);
+/* direct manipulation on the modal preview: scroll = zoom, drag = pan (mirrors editor.html) */
+(function(){
+  const of=$('moutframe'), cv=$('moutcv');
+  of.addEventListener('wheel',e=>{ e.preventDefault();
+    const t=MTF[maspect]; const z=t.zoom*Math.exp(-e.deltaY*0.0016);   // smooth, cursor-agnostic
+    t.zoom=Math.max(1,Math.min(3,Math.round(z*100)/100)); msync(); mredraw();
+  },{passive:false});
+  let pan=null;
+  of.addEventListener('pointerdown',e=>{ if(e.button!==0) return;
+    const [sw,sh]=DATA.source_dims||[0,0]; const t=MTF[maspect], c=computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
+    pan={px:e.clientX,py:e.clientY,x0:t.x,y0:t.y,c,fw:cv.width||1,fh:cv.height||1};
+    of.classList.add('grabbing'); try{of.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault();
+  });
+  of.addEventListener('pointermove',e=>{ if(!pan) return;
+    const {c,fw,fh,x0,y0}=pan, t=MTF[maspect];
+    const ddx=e.clientX-pan.px, ddy=e.clientY-pan.py;          // grab-the-image mapping (source px)
+    if(c.sx>0) t.x=Math.max(-1,Math.min(1, x0 - 2*ddx*c.w/(fw*c.sx)));
+    if(c.sy>0) t.y=Math.max(-1,Math.min(1, y0 - 2*ddy*c.h/(fh*c.sy)));
+    msync(); mredraw();
+  });
+  function endPan(){ if(pan){ pan=null; of.classList.remove('grabbing'); } }
+  of.addEventListener('pointerup',endPan); of.addEventListener('pointercancel',endPan); of.addEventListener('lostpointercapture',endPan);
+})();
 
 /* ---------- polling ---------- */
 async function pollLog(){
