@@ -1,4 +1,18 @@
-# 🎬 Content Machine
+# 🎬 Content Machine — macOS (Apple Silicon) build
+
+> **You're on the `mac-optimized` branch** — tuned for macOS on Apple Silicon:
+> VideoToolbox GPU H.264 encoding + whisper.cpp built with **Metal** (GPU
+> transcription). On Windows? Use the
+> [`windows-optimized`](../../tree/windows-optimized) branch instead. The app
+> auto-detects your hardware either way and falls back to CPU if the GPU can't be
+> used, so nothing breaks if you pick the "wrong" one.
+>
+> **One-time setup, then run:**
+> ```bash
+> bash scripts/setup.sh           # ffmpeg + whisper.cpp (Metal) + model + venv
+> source .venv/bin/activate
+> content-machine serve           # http://127.0.0.1:8000
+> ```
 
 Local-first LinkedIn video clipper. Drop in a long video (talk, webinar, podcast) →
 it transcribes locally, Claude picks the best clip-worthy moments, and each is cut
