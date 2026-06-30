@@ -25,17 +25,31 @@ function Get-File($url, $dest) {
   Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
 }
 
-Write-Host "==> 1/4 ffmpeg + ffprobe (static full build)"
-if (-not (Test-Path (Join-Path $Bin "ffmpeg.exe"))) {
+Write-Host "==> 1/4 ffmpeg + ffprobe (NVENC-capable, pinned to 7.1)"
+# Pinned to BtbN's ffmpeg 7.1 build, NOT bleeding-edge master. Master's NVENC
+# (h264_nvenc) requires NVIDIA driver >=610; common current drivers (e.g. 591.74)
+# only expose the older NVENC API, so master fails to init NVENC. ffmpeg 7.1's
+# NVENC works on those drivers (verified on an RTX 5060 / driver 591.74). The app
+# probes NVENC at runtime and falls back to CPU x264 if it's unusable, so this is
+# purely additive — the pin just lets the GPU encode path actually engage.
+$FFmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip"
+function Install-FFmpeg {
   $zip = Join-Path $Tmp "ffmpeg.zip"
-  Get-File "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" $zip
+  Get-File $FFmpegUrl $zip
   $ex = Join-Path $Tmp "ffmpeg"
   if (Test-Path $ex) { Remove-Item -Recurse -Force $ex }
   Expand-Archive -Path $zip -DestinationPath $ex -Force
   Get-ChildItem -Path $ex -Recurse -Include ffmpeg.exe, ffprobe.exe |
     ForEach-Object { Copy-Item $_.FullName -Destination $Bin -Force }
-  Write-Host "  ffmpeg.exe + ffprobe.exe -> vendor\bin"
-} else { Write-Host "  already present" }
+}
+$ffmpegExe = Join-Path $Bin "ffmpeg.exe"
+$need = $true
+if (Test-Path $ffmpegExe) {
+  $ver = (& $ffmpegExe -hide_banner -version 2>$null | Select-Object -First 1)
+  if ($ver -match "n7\.1") { $need = $false; Write-Host "  already present (ffmpeg 7.1)" }
+  else { Write-Host "  replacing '$ver' with pinned 7.1 (NVENC driver compat)" }
+}
+if ($need) { Install-FFmpeg; Write-Host "  ffmpeg 7.1 -> vendor\bin" }
 
 Write-Host "==> 2/4 whisper.cpp (prebuilt x64 BLAS binaries)"
 if (-not (Test-Path (Join-Path $WhisperBin "whisper-cli.exe"))) {
