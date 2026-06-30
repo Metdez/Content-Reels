@@ -20,7 +20,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from . import config, captions
+from . import config, captions, hwaccel
 from .jobs import Job
 from .logging_setup import get_logger, run, stream_run
 
@@ -115,12 +115,17 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
                      out: Path, src_w: int, src_h: int,
                      png_events: list[dict] | None = None,
                      zoom: float = 1.0, y_offset: float = 0.0,
-                     mute: bool = False, volume: float = 1.0) -> list[str]:
+                     mute: bool = False, volume: float = 1.0,
+                     encoder: dict | None = None) -> list[str]:
     """ffmpeg: cut + crop/scale, optionally compositing time-gated caption PNGs.
 
     Audio: carried through by default; `mute` drops it (-an), `volume` (!=1.0)
     scales it (folded into the filtergraph on the caption path, where -af is
     illegal alongside -filter_complex).
+
+    Video is encoded with `encoder` (a hwaccel profile: NVENC/VideoToolbox/x264);
+    decode + all filters stay on the CPU. Defaults to the x264 CPU profile so
+    existing callers/tests are unchanged.
     """
     dur = max(0.1, end - start)
     cs = crop_scale_filter(src_w, src_h, aspect, x_offset, zoom, y_offset)
@@ -159,22 +164,41 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
             cmd += ["-map", amap]
         cmd += ["-t", f"{dur:.3f}"]
 
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+    cmd += list((encoder or hwaccel.X264)["args"])      # GPU/CPU encode tail
     if not mute:
         cmd += ["-c:a", "aac", "-b:a", "128k"]
     cmd += ["-movflags", "+faststart", str(out)]
     return cmd
 
 
-def build_overlay_cmd(base: Path, overlay: Path, out: Path) -> list[str]:
+def build_overlay_cmd(base: Path, overlay: Path, out: Path,
+                      encoder: dict | None = None) -> list[str]:
     """Composite a transparent caption overlay video onto a rendered clip."""
+    enc = (encoder or hwaccel.X264)["args"]
     return [
         config.FFMPEG, "-y", "-i", str(base), "-i", str(overlay),
         "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto[v]",
-        "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
-        "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "-map", "[v]", "-map", "0:a?", *enc, "-c:a", "aac",
         "-movflags", "+faststart", str(out),
     ]
+
+
+def _run_encode(build_fn, enc: dict, log_, desc: str, streamed: bool = True, **kw):
+    """Run an encode command built by `build_fn(encoder)`; if a GPU encode fails,
+    transparently retry the SAME command on x264 so the output is never missing or
+    corrupt. Returns the encoder profile actually used."""
+    runner = stream_run if streamed else run
+    if enc["key"] == "x264":
+        runner(build_fn(hwaccel.X264), log_, desc, **kw)
+        return hwaccel.X264
+    try:
+        runner(build_fn(enc), log_, desc, **kw)
+        return enc
+    except subprocess.CalledProcessError as e:
+        log_.warning("encode '%s' failed on %s (%s) — retrying on libx264 (CPU)",
+                     desc, enc["key"], e)
+        runner(build_fn(hwaccel.X264), log_, f"{desc} [x264 fallback]", **kw)
+        return hwaccel.X264
 
 
 def build_thumbnail_cmd(src: Path, t: float, out: Path) -> list[str]:
@@ -200,6 +224,7 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
     config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
     src = next(job.data_dir.glob("source.*"))
     src_w, src_h = probe_dims(src)
+    enc = hwaccel.select_encoder()              # GPU if usable, else x264 — probed once
     tf = normalize_transforms(transforms, x_offset)
     edit = edit or {}
     start = float(edit.get("start", clip["start"]))
@@ -237,10 +262,13 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                 overlay = captions.render_hyperframes_overlay(
                     events, ow, oh, clip_dir / f"hf_{ASPECT_SLUG[aspect]}")
                 base = clip_dir / f"base_{ASPECT_SLUG[aspect]}.mp4"
-                run(build_render_cmd(src, start, end, aspect, t["x"], base, src_w, src_h,
-                    png_events=None, zoom=t["zoom"], y_offset=t["y"], mute=mute, volume=volume),
-                    log, f"render base {aspect}")
-                run(build_overlay_cmd(base, overlay, out), log, f"composite hyperframes {aspect}")
+                _run_encode(lambda e: build_render_cmd(
+                    src, start, end, aspect, t["x"], base, src_w, src_h,
+                    png_events=None, zoom=t["zoom"], y_offset=t["y"],
+                    mute=mute, volume=volume, encoder=e),
+                    enc, log, f"render base {aspect}", streamed=False)
+                _run_encode(lambda e: build_overlay_cmd(base, overlay, out, encoder=e),
+                            enc, log, f"composite hyperframes {aspect}", streamed=False)
                 outputs[aspect] = str(out)
                 if on_aspect_done:
                     on_aspect_done(aspect, str(out))
@@ -256,10 +284,11 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
             font = captions.find_font()
             png_events = captions.render_caption_pngs(
                 events, ow, oh, clip_dir / f"pngs_{ASPECT_SLUG[aspect]}", font)
-        stream_run(build_render_cmd(src, start, end, aspect, t["x"], out, src_w, src_h,
+        _run_encode(lambda e: build_render_cmd(
+                   src, start, end, aspect, t["x"], out, src_w, src_h,
                    png_events=png_events, zoom=t["zoom"], y_offset=t["y"],
-                   mute=mute, volume=volume),
-                   log, f"render clip {idx} {aspect}", cwd=str(clip_dir))
+                   mute=mute, volume=volume, encoder=e),
+                   enc, log, f"render clip {idx} {aspect}", cwd=str(clip_dir))
         outputs[aspect] = str(out)
         if on_aspect_done:
             on_aspect_done(aspect, str(out))
