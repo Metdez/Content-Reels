@@ -90,6 +90,7 @@ class MediaFiles(StaticFiles):
 
 app = FastAPI(title="Content Machine", lifespan=_lifespan)
 app.mount("/media", MediaFiles(directory=str(config.DATA_DIR)), name="media")
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 # job_id -> {"error": str|None} for surfacing background failures
 RUNNING: dict[str, dict] = {}

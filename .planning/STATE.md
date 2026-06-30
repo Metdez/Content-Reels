@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 6
-  total_plans: 6
-  completed_plans: 6
-  percent: 43
+  completed_phases: 7
+  total_plans: 7
+  completed_plans: 7
+  percent: 50
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 29 of 36 — next up (Shared Crop-Math Module + Parity Test); Phases 23–28 complete. **Backend track (24–28) DONE.** Frontend track begins (29–32).
+Phase: 30 of 36 — next up (Frontend Robustness: error surfacing + polling); Phases 23–29 complete (HALFWAY, 7/14).
 Plan: —
-Status: Phase 28 (validation & hardening) shipped — run_claude retry/backoff + per-chunk skip, trim/zoom bounds, uuid upload staging, friendly empty-transcript, MediaFiles allowlist (/media no longer leaks json), platform hints; bugs #2/#3/#4/#7 FIXED; 196 tests pass; ruff clean; coverage 92.4%. Running autonomously.
-Last activity: 2026-06-30 — Phase 28 complete (VAL-01…06)
+Status: Phase 29 (shared crop math) shipped — content_machine/static/crop.js (CMCrop) + /static mount; job.html+editor.html use it with server source_dims; 960-vector Node↔Python parity test (CI node added); fixed a real 1px banker's-rounding drift (JS Math.round vs Python round). 197 tests pass; ruff clean; coverage 92.5%; Playwright-verified live (CMCrop loaded, box renders, 0 console errors). Dev server restarted on current code (logs/serve_v6.log). Running autonomously.
+Last activity: 2026-06-30 — Phase 29 complete (CROP-01, CROP-02)
 
 ### v6 progress
 

@@ -123,6 +123,7 @@
 </header>
 <main id="main"><div class="boot" id="bootmsg">Loading editor…</div></main>
 
+<script src="/static/crop.js"></script>
 <script>
 const JOB="{{ job_id }}", IDX={{ idx }};
 const ASPECTS=["9:16","1:1","16:9"];
@@ -133,40 +134,13 @@ let dirtyClip=false, dirtyAspects=new Set();
 let sw=0, sh=0, BOUNDS=[];
 let MAG=1;   // preview magnifier (inspect zoom) — does NOT change output framing
 
-/* ---- crop math: mirrors render.compute_crop (zoom + x/y pan) ---- */
-function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
-  zoom=Math.max(1,parseFloat(zoom)||1); xoff=parseFloat(xoff)||0; yoff=parseFloat(yoff)||0;
-  const [tw,th]=aspect.split(":").map(Number); const tar=tw/th, sar=sw/sh;
-  let bw,bh; if(tar<=sar){ bh=sh; bw=Math.round(sh*tar);} else { bw=sw; bh=Math.round(sw/tar);}
-  let cw=Math.min(sw,Math.round(bw/zoom)), ch=Math.min(sh,Math.round(bh/zoom));
-  const sx=sw-cw, sy=sh-ch;
-  let x=Math.round(sx/2+Math.max(-1,Math.min(1,xoff))*sx/2);
-  let y=Math.round(sy/2+Math.max(-1,Math.min(1,yoff))*sy/2);
-  x=Math.max(0,Math.min(sx,x)); y=Math.max(0,Math.min(sy,y)); cw-=cw%2; ch-=ch%2;
-  return {x,y,w:cw,h:ch,sx,sy};
-}
-/* Draw the cropped region of the single source video onto the output canvas so
-   the preview plays in sync with the source (no freezing on frame 0). */
-function drawOut(frame,cv,video,aspect,t){
-  const [tw,th]=aspect.split(":").map(Number); const CAP=420*MAG;
-  // Size from the STABLE parent width, never frame.clientWidth — reading the
-  // frame's own (mutated) width fed a clamp↔unclamp oscillation that flashed.
-  const avail=(frame.parentElement&&frame.parentElement.clientWidth)||frame.clientWidth||0;
-  if(!avail) return;
-  let fw=avail, fh=fw*th/tw;
-  if(fh>CAP){fh=CAP; fw=CAP*tw/th;}
-  fw=Math.round(fw); fh=Math.round(fh);
-  if(frame.style.width!==fw+'px') frame.style.width=fw+'px';
-  if(frame.style.height!==fh+'px') frame.style.height=fh+'px';
-  if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
-  const ctx=cv.getContext('2d'); const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
-  if(!vw||!vh){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); return; }
-  const c=computeCrop(vw,vh,aspect,t.x,t.zoom,t.y);
-  try{ ctx.drawImage(video, c.x,c.y,c.w,c.h, 0,0, cv.width, cv.height); }
-  catch(e){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); }
-}
+/* crop math (computeCrop / drawBox / drawOut) lives in /static/crop.js as
+   window.CMCrop — single source of truth, locked to render.compute_crop by
+   tests/test_crop_parity.py. Source dims come from the server payload (sw/sh
+   from D.source_dims); the video intrinsic dims are only a fallback. The output
+   cap is 420*MAG (MAG = preview magnifier), evaluated live each frame. */
 function startOutLoop(frame,cv,video,getAspect,getTF){
-  function loop(){ if(!cv.isConnected) return; drawOut(frame,cv,video,getAspect(),getTF()); requestAnimationFrame(loop); }
+  function loop(){ if(!cv.isConnected) return; CMCrop.drawOut(frame,cv,sw,sh,video,getAspect(),getTF(),420*MAG); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 }
 function fmt(t){ t=Math.max(0,t); const m=Math.floor(t/60), s=(t%60); return m+':'+s.toFixed(2).padStart(5,'0'); }
@@ -335,10 +309,10 @@ function wire(){
   const srcvid=$('srcvid'), outcv=$('outcv');
   function sync(){ const t=TF[aspect]; $('zoom').value=t.zoom; $('ox').value=t.x; $('oy').value=t.y; }
   function redraw(){
-    const t=TF[aspect]; const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
+    const t=TF[aspect]; const c=CMCrop.computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
     const box=$('box'); if(sw&&sh){ box.style.display='block'; box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
       box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%'; } $('tag').textContent=aspect;
-    drawOut($('of'),outcv,srcvid,aspect,t); $('rt').textContent=aspect;
+    CMCrop.drawOut($('of'),outcv,sw,sh,srcvid,aspect,t,420*MAG); $('rt').textContent=aspect;
     $('zv').textContent=(+t.zoom).toFixed(2)+'×'; $('xv').textContent=offLabel(t.x); $('yv').textContent=yLabel(t.y);
     $('ox').disabled=!(c.sx>1); $('oy').disabled=!(c.sy>1);
   }
@@ -364,7 +338,7 @@ function wire(){
   let pan=null;
   of.addEventListener('pointerdown',e=>{
     if(e.button!==0) return;
-    const t=TF[aspect], c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
+    const t=TF[aspect], c=CMCrop.computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
     pan={px:e.clientX,py:e.clientY,x0:t.x,y0:t.y,c,fw:outcv.width||1,fh:outcv.height||1};
     of.classList.add('grabbing'); try{of.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault();
   });

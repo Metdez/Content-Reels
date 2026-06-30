@@ -187,67 +187,25 @@
   </div>
 </div></div>
 
+<script src="/static/crop.js"></script>
 <script>
 const JOB="{{ job_id }}";
 const ASPECTS=["9:16","1:1","16:9"];
 let DATA=null, pollTimer=null, previewBuilt=false;
 
-/* ---- crop math: mirrors render.compute_crop exactly (zoom + x/y pan) ---- */
-function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
-  zoom=Math.max(1,parseFloat(zoom)||1); xoff=parseFloat(xoff)||0; yoff=parseFloat(yoff)||0;
-  const [tw,th]=aspect.split(":").map(Number);
-  const tar=tw/th, sar=sw/sh;
-  let bw,bh;
-  if(tar<=sar){ bh=sh; bw=Math.round(sh*tar); }   // width-limited
-  else { bw=sw; bh=Math.round(sw/tar); }           // height-limited
-  let cw=Math.min(sw,Math.round(bw/zoom)), ch=Math.min(sh,Math.round(bh/zoom));
-  const sx=sw-cw, sy=sh-ch;
-  let x=Math.round(sx/2+Math.max(-1,Math.min(1,xoff))*sx/2);
-  let y=Math.round(sy/2+Math.max(-1,Math.min(1,yoff))*sy/2);
-  x=Math.max(0,Math.min(sx,x)); y=Math.max(0,Math.min(sy,y));
-  cw-=cw%2; ch-=ch%2;
-  return {x,y,w:cw,h:ch,sx,sy};
-}
-function drawBox(box,tag,sw,sh,aspect,xoff,zoom,yoff){
-  if(!sw||!sh){box.style.display='none';return;} box.style.display='block';
-  const c=computeCrop(sw,sh,aspect,xoff,zoom,yoff);
-  box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
-  box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%';
-  if(tag) tag.textContent=aspect;
-}
-/* Live WYSIWYG: draw the cropped/zoomed/panned region of the (single) source
-   video onto a canvas every frame, so the output preview plays in sync with the
-   source instead of freezing on frame 0. crop aspect == output aspect, so the
-   crop region maps exactly onto the output frame. */
-function drawOut(frame,cv,video,sw,sh,aspect,tf,maxH){
-  const [tw,th]=aspect.split(":").map(Number);
-  const CAP=maxH||560;                  // cap height so tall 9:16 isn't enormous
-  // Size from the STABLE parent column width, never from frame.clientWidth —
-  // reading the frame's own (mutated) width fed a clamp↔unclamp oscillation that
-  // made the preview flash every animation frame.
-  const avail=(frame.parentElement&&frame.parentElement.clientWidth)||frame.clientWidth||0;
-  if(!avail) return;
-  let fw=avail, fh=fw*th/tw;
-  if(fh>CAP){ fh=CAP; fw=CAP*tw/th; }   // clamp tall ratios by height
-  fw=Math.round(fw); fh=Math.round(fh);
-  if(frame.style.width!==fw+'px') frame.style.width=fw+'px';   // guarded: no per-frame reflow once settled
-  if(frame.style.height!==fh+'px') frame.style.height=fh+'px';
-  if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
-  const ctx=cv.getContext('2d');
-  const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
-  if(!vw||!vh){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); return; }
-  const c=computeCrop(vw,vh,aspect,tf.x,tf.zoom,tf.y);
-  try{ ctx.drawImage(video, c.x,c.y,c.w,c.h, 0,0, cv.width, cv.height); }
-  catch(e){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); }
-}
+/* crop math (computeCrop / drawBox / drawOut) lives in /static/crop.js as
+   window.CMCrop — single source of truth, locked to render.compute_crop by
+   tests/test_crop_parity.py. */
 /* Drive a canvas output preview from a source <video> with a self-stopping RAF
    loop (stops when the canvas leaves the DOM). Nudges a first frame to decode so
-   it's never blank, and follows play/seek live. */
-function startOutLoop(frame,cv,video,getAspect,getTF,maxH){
+   it's never blank, and follows play/seek live. Source dims come from the server
+   payload (getSrc -> [w,h]); the video intrinsic dims are only a fallback. */
+function startOutLoop(frame,cv,video,getAspect,getTF,getSrc,cap){
   video.addEventListener('loadedmetadata',()=>{ try{ if(video.currentTime<0.02) video.currentTime=0.05; }catch(e){} },{once:true});
   function loop(){
     if(!cv.isConnected) return;          // preview/editor re-rendered -> stop
-    drawOut(frame,cv,video,video.videoWidth,video.videoHeight,getAspect(),getTF(),maxH);
+    const sd=(getSrc&&getSrc())||[0,0];
+    CMCrop.drawOut(frame,cv,sd[0],sd[1],video,getAspect(),getTF(),cap);
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
@@ -317,9 +275,9 @@ function buildPreview(d){
   function redraw(){
     const t=TF[aspect];
     t.zoom=parseFloat(zoom.value); t.x=parseFloat(off.value); t.y=parseFloat(offy.value);
-    const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
-    drawBox(box,tag,sw,sh,aspect,t.x,t.zoom,t.y);
-    drawOut(outframe,outcv,pvid,sw,sh,aspect,t); outtag.textContent=aspect;
+    const c=CMCrop.computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
+    CMCrop.drawBox(box,tag,sw,sh,aspect,t.x,t.zoom,t.y);
+    CMCrop.drawOut(outframe,outcv,sw,sh,pvid,aspect,t); outtag.textContent=aspect;
     zval.textContent=t.zoom.toFixed(2)+'×'; val.textContent=offLabel(t.x); yval.textContent=yLabel(t.y);
     off.disabled = !(c.sx>1); offy.disabled = !(c.sy>1);   // disable an axis with no slack
     hint.textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${aspect}.`
@@ -327,7 +285,7 @@ function buildPreview(d){
   }
   pvid.addEventListener('loadedmetadata',redraw);
   [zoom,off,offy].forEach(el=>el.addEventListener('input',redraw));
-  startOutLoop(outframe,outcv,pvid,()=>aspect,()=>TF[aspect]);
+  startOutLoop(outframe,outcv,pvid,()=>aspect,()=>TF[aspect],()=>[sw,sh]);
   window.addEventListener('resize',redraw);
   document.querySelectorAll('#pasps .asp').forEach(el=>el.addEventListener('click',()=>{
     document.querySelectorAll('#pasps .asp').forEach(x=>x.classList.remove('active'));
@@ -448,8 +406,8 @@ function msync(){ const t=MTF[maspect]; $('mzoom').value=t.zoom; $('moff').value
 function mredraw(){
   const [sw,sh]=DATA.source_dims||[0,0]; const t=MTF[maspect];
   t.zoom=parseFloat($('mzoom').value); t.x=parseFloat($('moff').value); t.y=parseFloat($('moffy').value);
-  const c=computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
-  drawBox($('mbox'),$('mtag'),sw,sh,maspect,t.x,t.zoom,t.y); $('mouttag').textContent=maspect;
+  const c=CMCrop.computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
+  CMCrop.drawBox($('mbox'),$('mtag'),sw,sh,maspect,t.x,t.zoom,t.y); $('mouttag').textContent=maspect;
   $('mzval').textContent=t.zoom.toFixed(2)+'×'; $('mval').textContent=offLabel(t.x); $('myval').textContent=yLabel(t.y);
   $('moff').disabled=!(c.sx>1); $('moffy').disabled=!(c.sy>1);   // disable an axis with no slack
   $('mhint').textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${maspect}.`
@@ -545,7 +503,7 @@ function mGo(){
 ['mzoom','moff','moffy'].forEach(id=>$(id).addEventListener('input',mredraw));
 $('mcopy').addEventListener('click',()=>{ const t=MTF[maspect]; ASPECTS.forEach(a=>{MTF[a]={zoom:t.zoom,x:t.x,y:t.y};}); mredraw(); });
 $('mgo').addEventListener('click',mGo);
-startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],360);
+startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],()=>(DATA&&DATA.source_dims)||[0,0],360);
 /* direct manipulation on the modal preview: scroll = zoom, drag = pan (mirrors editor.html) */
 (function(){
   const of=$('moutframe'), cv=$('moutcv');
@@ -555,7 +513,7 @@ startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],3
   },{passive:false});
   let pan=null;
   of.addEventListener('pointerdown',e=>{ if(e.button!==0) return;
-    const [sw,sh]=DATA.source_dims||[0,0]; const t=MTF[maspect], c=computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
+    const [sw,sh]=DATA.source_dims||[0,0]; const t=MTF[maspect], c=CMCrop.computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
     pan={px:e.clientX,py:e.clientY,x0:t.x,y0:t.y,c,fw:cv.width||1,fh:cv.height||1};
     of.classList.add('grabbing'); try{of.setPointerCapture(e.pointerId);}catch(_){} e.preventDefault();
   });
