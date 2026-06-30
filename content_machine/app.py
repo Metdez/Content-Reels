@@ -83,7 +83,7 @@ def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                  job.job_id, model or config.DEFAULT_MODEL, max_clips, captions_mode)
         try:
             import json as _json
-            transcribe.transcribe(source, model=model)
+            transcribe.transcribe(source, model=model, job=job)
             clips_path = select.select_clips(job, max_clips=max_clips)
             n_clips = len(_json.loads(Path(clips_path).read_text()).get("clips", []))
             if n_clips == 0:

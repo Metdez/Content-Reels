@@ -117,9 +117,15 @@ function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
    the preview plays in sync with the source (no freezing on frame 0). */
 function drawOut(frame,cv,video,aspect,t){
   const [tw,th]=aspect.split(":").map(Number); const CAP=420;
-  let fw=frame.clientWidth||0; if(!fw)return; let fh=fw*th/tw;
-  if(fh>CAP){fh=CAP; fw=Math.round(CAP*tw/th); frame.style.width=fw+'px';} else {frame.style.width='';}
-  fh=Math.round(fh); frame.style.height=fh+'px';
+  // Size from the STABLE parent width, never frame.clientWidth — reading the
+  // frame's own (mutated) width fed a clamp↔unclamp oscillation that flashed.
+  const avail=(frame.parentElement&&frame.parentElement.clientWidth)||frame.clientWidth||0;
+  if(!avail) return;
+  let fw=avail, fh=fw*th/tw;
+  if(fh>CAP){fh=CAP; fw=CAP*tw/th;}
+  fw=Math.round(fw); fh=Math.round(fh);
+  if(frame.style.width!==fw+'px') frame.style.width=fw+'px';
+  if(frame.style.height!==fh+'px') frame.style.height=fh+'px';
   if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
   const ctx=cv.getContext('2d'); const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
   if(!vw||!vh){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); return; }

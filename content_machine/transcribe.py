@@ -183,12 +183,18 @@ def vad_filter(segments: list[dict], silence_ranges: list[tuple[float, float]],
 
 # --- orchestration -----------------------------------------------------------
 def transcribe(video_path: str | Path, model: str | None = None,
-               vad: bool = True, force: bool = False, language: str | None = None) -> Job:
+               vad: bool = True, force: bool = False, language: str | None = None,
+               job: Job | None = None) -> Job:
     video_path = Path(video_path)
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    job = Job.for_video(video_path)
+    # Use the caller's job when given (the web pipeline runs under a per-upload
+    # nonce id) so every stage reads/writes ONE dir. Only fall back to deriving a
+    # content-hash job for standalone/CLI callers. (Bug: deriving Job.for_video
+    # here meant the pipeline's nonced run dir never got a transcript and select
+    # then failed with "transcript.json not found".)
+    job = job or Job.for_video(video_path)
     job.ensure_dirs()
     log.info("transcribe: job %s from %s (%.1f MB)", job.job_id, video_path.name,
              video_path.stat().st_size / 1e6)

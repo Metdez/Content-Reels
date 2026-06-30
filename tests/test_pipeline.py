@@ -89,6 +89,36 @@ def test_set_progress_merges_without_resetting_status(tmp_path, monkeypatch):
     assert job.load_manifest()["stages"]["render"]["progress"] == 1.0
 
 
+def test_transcribe_writes_into_provided_job_dir(tmp_path, monkeypatch):
+    """Regression: the web pipeline runs under a per-upload nonce job id. transcribe
+    must write the transcript into THAT job's dir, not a content-hash dir it derives
+    itself — otherwise select can't find transcript.json (the Run crash)."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+    nonced = "deadbeef00abcdef"
+    job_dir = config.DATA_DIR / nonced
+    job_dir.mkdir(parents=True)
+    vid = job_dir / "source.mp4"; vid.write_bytes(b"some real video bytes")
+    provided = Job(job_id=nonced, source_name="source.mp4", data_dir=job_dir)
+    content_id = compute_job_id(vid)
+    assert content_id != nonced                       # the two ids genuinely differ
+
+    # stub the heavy stages so no ffmpeg/whisper binaries are needed
+    monkeypatch.setattr(t, "extract_audio", lambda src, out: out)
+
+    def fake_whisper(audio, model, out_prefix, language=None, on_progress=None):
+        p = out_prefix.with_suffix(".json")
+        p.write_text(json.dumps({"result": {"language": "en"}, "transcription": [
+            {"offsets": {"from": 0, "to": 1000}, "text": " hi", "tokens": []}]}))
+        return p
+    monkeypatch.setattr(t, "run_whisper", fake_whisper)
+    monkeypatch.setattr(t, "detect_silence", lambda *a, **k: [])
+
+    job = t.transcribe(vid, job=provided)
+    assert job.job_id == nonced
+    assert provided.transcript_path.exists()                       # transcript in the nonced dir
+    assert not (config.DATA_DIR / content_id).exists()             # NOT in a derived content-hash dir
+
+
 def test_parse_silencedetect():
     stderr = (
         "[silencedetect @ 0x1] silence_start: 0\n"

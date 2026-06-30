@@ -179,11 +179,16 @@ function drawBox(box,tag,sw,sh,aspect,xoff,zoom,yoff){
 function drawOut(frame,cv,video,sw,sh,aspect,tf,maxH){
   const [tw,th]=aspect.split(":").map(Number);
   const CAP=maxH||560;                  // cap height so tall 9:16 isn't enormous
-  let fw=frame.clientWidth||0; if(!fw) return;
-  let fh=fw*th/tw;
-  if(fh>CAP){ fh=CAP; fw=Math.round(CAP*tw/th); frame.style.width=fw+'px'; }
-  else { frame.style.width=''; }
-  fh=Math.round(fh); frame.style.height=fh+'px';
+  // Size from the STABLE parent column width, never from frame.clientWidth —
+  // reading the frame's own (mutated) width fed a clamp↔unclamp oscillation that
+  // made the preview flash every animation frame.
+  const avail=(frame.parentElement&&frame.parentElement.clientWidth)||frame.clientWidth||0;
+  if(!avail) return;
+  let fw=avail, fh=fw*th/tw;
+  if(fh>CAP){ fh=CAP; fw=CAP*tw/th; }   // clamp tall ratios by height
+  fw=Math.round(fw); fh=Math.round(fh);
+  if(frame.style.width!==fw+'px') frame.style.width=fw+'px';   // guarded: no per-frame reflow once settled
+  if(frame.style.height!==fh+'px') frame.style.height=fh+'px';
   if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
   const ctx=cv.getContext('2d');
   const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
