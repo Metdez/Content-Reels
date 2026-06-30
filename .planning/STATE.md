@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 7
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
+  percent: 14
 ---
 
 # Project State
@@ -24,14 +24,23 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 24 of 36 — next up (Backend Unit Coverage); Phase 23 complete
+Phase: 25 of 36 — next up (HTTP API Integration Tests); Phases 23–24 complete
 Plan: —
-Status: Phase 23 (Test Harness & CI) shipped — pytest-cov baseline 64.2%, TestClient + seeded-job fixtures, scripts/seed_fixture.py (Playwright-verified live), ruff clean, CI workflow; 64 tests pass. Running autonomously.
-Last activity: 2026-06-30 — Phase 23 complete (QA-01…05)
+Status: Phase 24 (Backend Unit Coverage) shipped — +92 tests across config/cli/logging_setup/render/captions/select/transcribe; coverage 64.2%→89.2%; 156 tests pass; ruff clean. 5 bugs characterized + logged for fix phases. Running autonomously.
+Last activity: 2026-06-30 — Phase 24 complete (QA-06…11)
 
 ### v6 progress
 
-- P23 ✓ Test Harness & CI: pytest-cov (64.2% baseline), tests/conftest.py (`client` TestClient + `seed_job`/`seeded_job`), tests/test_harness.py (+6 HTTP tests, 64 total), scripts/seed_fixture.py (real-media seed, browser-verified: review grid Complete 100%, 0 console errors), [tool.ruff] clean, .github/workflows/test.yml, Makefile lint/cov/e2e-seed. Coverage gaps flagged for P24: cli.py 0%, logging_setup 45.7%, render 46.2%.
+- P23 ✓ Test Harness & CI: pytest-cov (64.2% baseline), tests/conftest.py (`client` TestClient + `seed_job`/`seeded_job`), tests/test_harness.py (+6 HTTP tests), scripts/seed_fixture.py (real-media seed, browser-verified), [tool.ruff] clean, .github/workflows/test.yml, Makefile lint/cov/e2e-seed.
+- P24 ✓ Backend Unit Coverage: +92 tests (6 new files, written in parallel). Coverage 64.2%→89.2% (config/logging_setup 100%, cli 97.9, captions 98.9, render 98.6, select 95.7, transcribe 92.9). app.py 74.5% → P25; hwaccel 60% (real probe is hardware).
+
+### Bugs found in P24 (deferred to fix phases — DO NOT lose)
+
+1. **REL (P26):** `rerender_one`/`render_job` non-atomic read-modify-write of `render.json` (`render.py:350-362, 400`) → concurrent clip update silently lost. Tests pin current (wrong) behavior — flip to correct on fix.
+2. **VAL-02 (P28):** `run_claude` leaks raw `JSONDecodeError` on chatty/non-JSON stdout (`select.py:130`).
+3. **VAL-02 (P28):** no retry — one bad/timed-out chunk aborts whole multi-chunk selection (`select.py:217`).
+4. **P28 minor:** `select.py:129` `proc.stderr[:500]` None-risk (latent).
+5. **P30 note:** `stream_run` swallows `on_line` exceptions + raises `CalledProcessError` with no captured output (`logging_setup.py:123-124, 131`) — buggy progress parser/error detail invisible.
 
 ### Verified live (v5.1, Windows 11, real NVENC + Playwright)
 
