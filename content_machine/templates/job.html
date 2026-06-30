@@ -344,7 +344,8 @@ function clipEl(c){
     <div class="score">${c.score!=null?('★ '+c.score):''}${c.captions?(' · '+c.captions+' captions'):''}</div>
     <div class="why">${esc(c.rationale)||''}</div>
     <div class="actions">
-      <button class="adjust" onclick="openModal(${c.index})">✂ Adjust crop</button>
+      <a class="adjust" href="/job/${JOB}/clip/${c.index}/edit" style="text-decoration:none">✎ Edit clip</a>
+      <button class="adjust" onclick="openModal(${c.index})">✂ Quick crop</button>
       <div class="dl">${dls}</div>
     </div></div>`;
 }

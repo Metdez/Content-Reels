@@ -114,16 +114,29 @@ def crop_scale_filter(src_w: int, src_h: int, aspect: str, x_offset: float = 0.0
 def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset: float,
                      out: Path, src_w: int, src_h: int,
                      png_events: list[dict] | None = None,
-                     zoom: float = 1.0, y_offset: float = 0.0) -> list[str]:
-    """ffmpeg: cut + crop/scale, optionally compositing time-gated caption PNGs."""
+                     zoom: float = 1.0, y_offset: float = 0.0,
+                     mute: bool = False, volume: float = 1.0) -> list[str]:
+    """ffmpeg: cut + crop/scale, optionally compositing time-gated caption PNGs.
+
+    Audio: carried through by default; `mute` drops it (-an), `volume` (!=1.0)
+    scales it (folded into the filtergraph on the caption path, where -af is
+    illegal alongside -filter_complex).
+    """
     dur = max(0.1, end - start)
     cs = crop_scale_filter(src_w, src_h, aspect, x_offset, zoom, y_offset)
     cmd = [config.FFMPEG, "-y", "-ss", f"{start:.3f}", "-i", str(src)]
+    vol = None if (mute or abs(volume - 1.0) < 1e-6) else volume
 
     png_events = png_events or []
     if not png_events:
         # explicit maps so the audio stream is always carried, never dropped
-        cmd += ["-t", f"{dur:.3f}", "-vf", cs, "-map", "0:v:0", "-map", "0:a?"]
+        cmd += ["-t", f"{dur:.3f}", "-vf", cs, "-map", "0:v:0"]
+        if mute:
+            cmd += ["-an"]
+        else:
+            cmd += ["-map", "0:a?"]
+            if vol is not None:
+                cmd += ["-af", f"volume={vol:.3f}"]
     else:
         for e in png_events:
             cmd += ["-loop", "1", "-i", str(e["png"])]
@@ -135,12 +148,21 @@ def build_render_cmd(src: Path, start: float, end: float, aspect: str, x_offset:
                 f"[{prev}][{i + 1}:v]overlay=0:0:enable='between(t,{e['start']:.3f},{e['end']:.3f})'[{nxt}]"
             )
             prev = nxt
-        cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]", "-map", "0:a?",
-                "-t", f"{dur:.3f}"]
+        amap = "0:a?"
+        if not mute and vol is not None:           # -af is illegal with -filter_complex
+            parts.append(f"[0:a]volume={vol:.3f}[outa]")
+            amap = "[outa]"
+        cmd += ["-filter_complex", ";".join(parts), "-map", f"[{prev}]"]
+        if mute:
+            cmd += ["-an"]
+        else:
+            cmd += ["-map", amap]
+        cmd += ["-t", f"{dur:.3f}"]
 
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
-            "-movflags", "+faststart", str(out)]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]
+    if not mute:
+        cmd += ["-c:a", "aac", "-b:a", "128k"]
+    cmd += ["-movflags", "+faststart", str(out)]
     return cmd
 
 
@@ -164,40 +186,59 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
                 aspects: tuple[str, ...] = config.ASPECT_RATIOS,
                 x_offset: float = 0.0, caption_mode: str = "overlay",
                 transforms: dict | None = None,
-                on_aspect_done=None, prev_outputs: dict | None = None) -> dict:
+                on_aspect_done=None, prev_outputs: dict | None = None,
+                edit: dict | None = None) -> dict:
     """Render a clip in each aspect, each with its own {zoom,x,y} framing.
 
     `transforms` is an aspect -> {zoom,x,y} mapping (falls back to x_offset for
-    any missing axis). `on_aspect_done(aspect, url_path)` is called as each
-    aspect finishes so the UI can surface clips incrementally. `prev_outputs`
-    seeds the returned outputs so a partial re-render (subset of `aspects`)
-    keeps the untouched aspects.
+    any missing axis). `edit` is a non-destructive override bundle from the clip
+    editor: {start, end} (trim), {captions:{mode, segments}} (custom caption text/
+    timing or off), {audio:{mute, volume}}. `on_aspect_done(aspect, url_path)`
+    fires as each aspect finishes; `prev_outputs` seeds outputs so a partial
+    re-render keeps untouched aspects.
     """
     config.require_tool(config.FFMPEG, "Install ffmpeg: brew install ffmpeg")
     src = next(job.data_dir.glob("source.*"))
     src_w, src_h = probe_dims(src)
     tf = normalize_transforms(transforms, x_offset)
+    edit = edit or {}
+    start = float(edit.get("start", clip["start"]))
+    end = float(edit.get("end", clip["end"]))
+    cap = edit.get("captions") or {}
+    cap_mode = cap.get("mode", caption_mode)
+    audio = edit.get("audio") or {}
+    mute = bool(audio.get("mute", False))
+    volume = float(audio.get("volume", 1.0))
     clip_dir = job.clips_dir / f"clip{idx:02d}"
     clip_dir.mkdir(parents=True, exist_ok=True)
-    events = captions.clip_caption_events(segments, clip["start"], clip["end"])
-    log.info("render clip %d (%.1f-%.1fs, %d caption events) -> %s",
-             idx, clip["start"], clip["end"], len(events), ", ".join(aspects))
+
+    # caption events (clip-relative): explicit edit segments win, else auto-derive
+    if cap_mode == "none":
+        events = []
+    elif cap.get("segments") is not None:
+        events = [{"start": float(s["start"]), "end": float(s["end"]),
+                   "text": s.get("text", "")}
+                  for s in cap["segments"] if s.get("text", "").strip()]
+    else:
+        events = captions.clip_caption_events(segments, start, end)
+    log.info("render clip %d (%.1f-%.1fs, %d caption events, captions=%s, mute=%s, vol=%.2f) -> %s",
+             idx, start, end, len(events), cap_mode, mute, volume, ", ".join(aspects))
 
     outputs = dict(prev_outputs or {})
-    captions_used = caption_mode
+    captions_used = cap_mode
     for aspect in aspects:
         ow, oh = OUTPUT_DIMS[aspect]
         out = clip_dir / f"{ASPECT_SLUG[aspect]}.mp4"
         t = tf[aspect]
 
         # try hyperframes animated overlay first if requested
-        if caption_mode == "hyperframes" and events and captions.hyperframes_available():
+        if cap_mode == "hyperframes" and events and captions.hyperframes_available():
             try:
                 overlay = captions.render_hyperframes_overlay(
                     events, ow, oh, clip_dir / f"hf_{ASPECT_SLUG[aspect]}")
                 base = clip_dir / f"base_{ASPECT_SLUG[aspect]}.mp4"
-                run(build_render_cmd(src, clip["start"], clip["end"], aspect, t["x"],
-                    base, src_w, src_h, png_events=None, zoom=t["zoom"], y_offset=t["y"]),
+                run(build_render_cmd(src, start, end, aspect, t["x"], base, src_w, src_h,
+                    png_events=None, zoom=t["zoom"], y_offset=t["y"], mute=mute, volume=volume),
                     log, f"render base {aspect}")
                 run(build_overlay_cmd(base, overlay, out), log, f"composite hyperframes {aspect}")
                 outputs[aspect] = str(out)
@@ -211,33 +252,37 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
 
         # default: Pillow PNG overlays (or no captions)
         png_events = []
-        if caption_mode != "none" and events:
+        if cap_mode != "none" and events:
             font = captions.find_font()
             png_events = captions.render_caption_pngs(
                 events, ow, oh, clip_dir / f"pngs_{ASPECT_SLUG[aspect]}", font)
-        stream_run(build_render_cmd(src, clip["start"], clip["end"], aspect, t["x"],
-                   out, src_w, src_h, png_events=png_events, zoom=t["zoom"], y_offset=t["y"]),
+        stream_run(build_render_cmd(src, start, end, aspect, t["x"], out, src_w, src_h,
+                   png_events=png_events, zoom=t["zoom"], y_offset=t["y"],
+                   mute=mute, volume=volume),
                    log, f"render clip {idx} {aspect}", cwd=str(clip_dir))
         outputs[aspect] = str(out)
         if on_aspect_done:
             on_aspect_done(aspect, str(out))
 
     thumb = clip_dir / "thumb.jpg"
-    run(build_thumbnail_cmd(src, clip["start"] + 0.5, thumb), log, f"thumbnail clip {idx}")
+    run(build_thumbnail_cmd(src, start + 0.5, thumb), log, f"thumbnail clip {idx}")
     return {"index": idx, "dir": str(clip_dir), "outputs": outputs,
             "thumb": str(thumb), "captions": captions_used,
             "title": clip.get("title", ""), "score": clip.get("score"),
-            "transforms": tf}
+            "transforms": tf, "start": start, "end": end,
+            "audio": {"mute": mute, "volume": volume}}
 
 
 def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
                  caption_mode: str = "overlay", transforms: dict | None = None,
-                 aspects: tuple[str, ...] | None = None) -> dict:
-    """Re-render a single clip after a UI tweak (framing / trim / captions).
+                 aspects: tuple[str, ...] | None = None,
+                 edit: dict | None = None) -> dict:
+    """Re-render a single clip after a UI tweak (framing / trim / captions / audio).
 
-    `transforms` carries per-aspect {zoom,x,y}; `aspects` (optional) limits the
-    re-render to specific ratios so only the changed aspect re-encodes — the
-    untouched aspects are preserved from the existing render manifest.
+    The full editor state is persisted non-destructively to clips/clipNN/edit.json
+    and merged over any prior edit, so re-renders are reproducible. `aspects`
+    (optional) limits the re-render to specific ratios so only the changed aspect
+    re-encodes — untouched aspects are preserved from the existing render manifest.
     """
     job = job_id_or_job if isinstance(job_id_or_job, Job) else Job.load(job_id_or_job)
     clips = json.loads(job.clips_json_path.read_text()).get("clips", [])
@@ -246,17 +291,27 @@ def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
         raise IndexError(f"clip {idx} out of range (1..{len(clips)})")
     target_aspects = tuple(aspects) if aspects else config.ASPECT_RATIOS
 
+    clip_dir = job.clips_dir / f"clip{idx:02d}"
+    clip_dir.mkdir(parents=True, exist_ok=True)
+    edit_path = clip_dir / "edit.json"
+    stored = json.loads(edit_path.read_text()) if edit_path.exists() else {}
+    if edit:
+        stored = {**stored, **edit}                  # merge new edit over prior
+    # transforms: prior/edit transforms, then the explicit transforms arg wins
+    merged_tf = dict(stored.get("transforms") or {})
+    merged_tf.update(transforms or {})
+    stored["transforms"] = merged_tf
+    if edit is not None or transforms is not None:
+        edit_path.write_text(json.dumps(stored, indent=2))
+
     manifest_path = job.clips_dir / "render.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"clips": []}
     existing = next((c for c in manifest.get("clips", []) if c.get("index") == idx), None)
     prev_outputs = dict(existing.get("outputs", {})) if existing else {}
-    # carry framing forward for aspects we're NOT re-rendering this time
-    merged_tf = dict((existing or {}).get("transforms", {}))
-    merged_tf.update(transforms or {})
 
     result = render_clip(job, clips[idx - 1], idx, segments, target_aspects,
                          x_offset, caption_mode, transforms=merged_tf,
-                         prev_outputs=prev_outputs)
+                         prev_outputs=prev_outputs, edit=stored)
     # patch render.json for this clip so the library/UI reflect the re-render
     others = [c for c in manifest.get("clips", []) if c.get("index") != idx]
     manifest["clips"] = sorted(others + [result], key=lambda c: c["index"])

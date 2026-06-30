@@ -119,6 +119,65 @@ def test_job_payload_includes_master_progress(monkeypatch, tmp_path):
     assert abs(payload["progress"] - 0.22) < 1e-6
 
 
+def test_clip_editor_payload_structure(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    from content_machine.jobs import Job
+    d = _make_job(tmp_path, "gggg", {"render": {"status": "done"}})
+    m = json.loads((d / "job.json").read_text()); m["source_dims"] = [1920, 1080]
+    (d / "job.json").write_text(json.dumps(m))
+    (d / "source.mp4").write_bytes(b"x")
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 10, "end": 20, "title": "Hook"}]}))
+    (d / "transcript.json").write_text(json.dumps({"duration": 30, "segments": [
+        {"start": 10, "end": 13, "text": "hello"}, {"start": 13, "end": 18, "text": "world"}]}))
+    (d / "clips").mkdir(exist_ok=True)
+    (d / "clips" / "render.json").write_text(json.dumps({"clips": [
+        {"index": 1, "transforms": {"9:16": {"zoom": 1.2, "x": 0.1, "y": 0}},
+         "outputs": {"9:16": str(d / "clips" / "c.mp4")}, "audio": {"mute": False, "volume": 1.0}}]}))
+    (d / "clips" / "c.mp4").write_bytes(b"x")
+    p = app._clip_editor_payload(Job.load("gggg"), 1)
+    assert p["title"] == "Hook" and p["start"] == 10 and p["end"] == 20
+    assert p["source_dims"] == [1920, 1080]
+    assert p["transforms"]["9:16"]["zoom"] == 1.2
+    assert len(p["captions"]["segments"]) == 2          # both segments fall in [10,20]
+    assert p["captions"]["segments"][0]["start"] == 0.0  # clip-relative
+    assert p["boundaries"][0] == 0.0 and p["duration"] == 30
+
+
+def test_save_clip_edit_builds_edit_and_targets_aspects(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app, render
+    d = _make_job(tmp_path, "ffff", {"render": {"status": "done"}})
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
+    cap = {}
+
+    def fake_rerender(job_id, idx, edit=None, aspects=None, **kw):
+        cap["job_id"], cap["idx"], cap["edit"], cap["aspects"] = job_id, idx, edit, aspects
+        return {"index": idx, "outputs": {"9:16": str(d / "x.mp4")},
+                "start": edit["start"], "end": edit["end"],
+                "audio": edit.get("audio"), "transforms": edit.get("transforms")}
+    monkeypatch.setattr(render, "rerender_one", fake_rerender)
+    out = app.save_clip_edit("ffff", 1, payload={
+        "start": 2.0, "end": 6.0, "transforms": {"9:16": {"zoom": 1.5, "x": 0, "y": 0}},
+        "captions": {"mode": "none"}, "audio": {"mute": True, "volume": 1.0},
+        "aspects": ["9:16", "bogus"]})
+    assert cap["edit"]["start"] == 2.0 and cap["edit"]["end"] == 6.0
+    assert cap["edit"]["captions"] == {"mode": "none"}
+    assert cap["edit"]["audio"] == {"mute": True, "volume": 1.0}
+    assert cap["aspects"] == ("9:16",)                  # bogus aspect filtered out
+    assert out["index"] == 1 and out["outputs"]["9:16"].startswith("/media/ffff/")
+
+
+def test_save_clip_edit_rejects_too_short_trim(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    import pytest
+    d = _make_job(tmp_path, "hhhh", {"render": {"status": "done"}})
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
+    with pytest.raises(Exception):
+        app.save_clip_edit("hhhh", 1, payload={"start": 2.0, "end": 2.2})
+
+
 def test_job_payload_merges_clips_and_rationale(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app

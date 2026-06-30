@@ -15,14 +15,14 @@ import threading
 import traceback
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import config
 from .jobs import Job, compute_job_id, STAGES
-from . import transcribe, select, render
+from . import transcribe, select, render, captions
 from .logging_setup import get_logger, job_log, job_log_path, tail
 
 log = get_logger(__name__)
@@ -321,6 +321,98 @@ def reframe(job_id: str, idx: int, x_offset: float = Form(0.0),
         raise HTTPException(404, "Job/clips not found")
     result = render.rerender_one(job_id, idx, x_offset=x_offset, caption_mode=captions)
     return {"index": result["index"],
+            "outputs": {a: media_url(p) for a, p in result["outputs"].items()}}
+
+
+# --- clip editor -------------------------------------------------------------
+def _clip_editor_payload(job: Job, idx: int) -> dict:
+    m = job.load_manifest()
+    src = next(job.data_dir.glob("source.*"), None)
+    clips = json.loads(job.clips_json_path.read_text()).get("clips", []) \
+        if job.clips_json_path.exists() else []
+    if not 1 <= idx <= len(clips):
+        raise HTTPException(404, "Clip not found")
+    clip = clips[idx - 1]
+    transcript = json.loads(job.transcript_path.read_text()) \
+        if job.transcript_path.exists() else {"segments": [], "duration": 0}
+    segs = transcript.get("segments", [])
+    duration = transcript.get("duration", 0) or (segs[-1]["end"] if segs else 0)
+
+    rentry = None
+    rman = job.clips_dir / "render.json"
+    if rman.exists():
+        rentry = next((c for c in json.loads(rman.read_text()).get("clips", [])
+                       if c.get("index") == idx), None)
+    edit_path = job.clips_dir / f"clip{idx:02d}" / "edit.json"
+    edit = json.loads(edit_path.read_text()) if edit_path.exists() else {}
+
+    start = float(edit.get("start", clip.get("start", 0)))
+    end = float(edit.get("end", clip.get("end", 0)))
+    transforms = edit.get("transforms") or (rentry or {}).get("transforms") or {}
+    audio = edit.get("audio") or (rentry or {}).get("audio") or {"mute": False, "volume": 1.0}
+    cap = edit.get("captions") or {}
+    cap_mode = cap.get("mode", (rentry or {}).get("captions") or "overlay")
+    if cap_mode not in ("overlay", "none"):
+        cap_mode = "overlay"
+    if cap.get("segments") is not None:
+        cap_segs = cap["segments"]
+    else:
+        cap_segs = captions.clip_caption_events(segs, start, end)
+
+    # snap points for trim handles: every segment start + end (source time), unique+sorted
+    pts = sorted({0.0, float(duration)}
+                 | {round(float(s["start"]), 3) for s in segs}
+                 | {round(float(s["end"]), 3) for s in segs})
+    return {
+        "index": idx, "title": clip.get("title", ""),
+        "orig_start": clip.get("start", 0), "orig_end": clip.get("end", 0),
+        "start": start, "end": end, "duration": duration,
+        "source_url": media_url(src) if src else None,
+        "source_dims": m.get("source_dims", [0, 0]),
+        "transforms": transforms, "audio": audio,
+        "captions": {"mode": cap_mode, "segments": cap_segs},
+        "boundaries": pts,
+        "outputs": {a: media_url(p) for a, p in (rentry or {}).get("outputs", {}).items()},
+    }
+
+
+@app.get("/job/{job_id}/clip/{idx}/edit", response_class=HTMLResponse)
+def clip_editor_page(job_id: str, idx: int):
+    if not (config.DATA_DIR / job_id / "job.json").exists():
+        raise HTTPException(404, "Job not found")
+    return render_template("editor.html", job_id=job_id, idx=idx)
+
+
+@app.get("/api/job/{job_id}/clip/{idx}")
+def api_clip_editor(job_id: str, idx: int):
+    if not (config.DATA_DIR / job_id / "job.json").exists():
+        raise HTTPException(404, "Job not found")
+    return JSONResponse(_clip_editor_payload(Job.load(job_id), idx))
+
+
+@app.post("/api/job/{job_id}/clip/{idx}/edit")
+def save_clip_edit(job_id: str, idx: int, payload: dict = Body(...)):
+    if not (config.DATA_DIR / job_id / "clips.json").exists():
+        raise HTTPException(404, "Job/clips not found")
+    aspects = payload.get("aspects") or None
+    if aspects:
+        aspects = tuple(a for a in aspects if a in config.ASPECT_RATIOS) or None
+    edit = {}
+    if "start" in payload and "end" in payload:
+        s, e = float(payload["start"]), float(payload["end"])
+        if e - s < 0.5:
+            raise HTTPException(400, "Clip must be at least 0.5s long")
+        edit["start"], edit["end"] = s, e
+    if isinstance(payload.get("transforms"), dict):
+        edit["transforms"] = payload["transforms"]
+    if isinstance(payload.get("captions"), dict):
+        edit["captions"] = payload["captions"]
+    if isinstance(payload.get("audio"), dict):
+        edit["audio"] = payload["audio"]
+    result = render.rerender_one(job_id, idx, edit=edit, aspects=aspects)
+    return {"index": result["index"], "start": result.get("start"),
+            "end": result.get("end"), "audio": result.get("audio"),
+            "transforms": result.get("transforms"),
             "outputs": {a: media_url(p) for a, p in result["outputs"].items()}}
 
 
