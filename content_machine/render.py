@@ -20,7 +20,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from . import config, captions, hwaccel
+from . import captions, config, hwaccel
 from .jobs import Job
 from .logging_setup import get_logger, run, stream_run
 

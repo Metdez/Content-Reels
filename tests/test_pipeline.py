@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 from content_machine import config
-from content_machine.jobs import Job, compute_job_id, STAGES
 from content_machine import transcribe as t
+from content_machine.jobs import STAGES, Job, compute_job_id
 
 
 def test_job_id_deterministic_and_content_based(tmp_path):

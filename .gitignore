@@ -5,6 +5,12 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Server log scratch (variant outputs)
+/logs/*.out
 
 # Vendored builds (whisper.cpp is cloned + built locally by scripts/setup.sh)
 /vendor/

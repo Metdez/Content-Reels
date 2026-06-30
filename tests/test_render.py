@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from content_machine import render as r
 from content_machine import captions as cap
+from content_machine import render as r
 
 
 def test_compute_crop_vertical_from_landscape():

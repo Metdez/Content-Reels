@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 7
 ---
 
 # Project State
@@ -24,10 +24,14 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 23 of 36 — first v6 phase (Test Harness & CI Foundation), about to plan/execute
+Phase: 24 of 36 — next up (Backend Unit Coverage); Phase 23 complete
 Plan: —
-Status: v6 roadmap created (14 phases, 41 requirements mapped); discovery inventory at .planning/v6-DISCOVERY.md; running autonomously
-Last activity: 2026-06-30 — Milestone v6 started (roadmap + requirements committed)
+Status: Phase 23 (Test Harness & CI) shipped — pytest-cov baseline 64.2%, TestClient + seeded-job fixtures, scripts/seed_fixture.py (Playwright-verified live), ruff clean, CI workflow; 64 tests pass. Running autonomously.
+Last activity: 2026-06-30 — Phase 23 complete (QA-01…05)
+
+### v6 progress
+
+- P23 ✓ Test Harness & CI: pytest-cov (64.2% baseline), tests/conftest.py (`client` TestClient + `seed_job`/`seeded_job`), tests/test_harness.py (+6 HTTP tests, 64 total), scripts/seed_fixture.py (real-media seed, browser-verified: review grid Complete 100%, 0 console errors), [tool.ruff] clean, .github/workflows/test.yml, Makefile lint/cov/e2e-seed. Coverage gaps flagged for P24: cli.py 0%, logging_setup 45.7%, render 46.2%.
 
 ### Verified live (v5.1, Windows 11, real NVENC + Playwright)
 

@@ -46,6 +46,7 @@ def test_media_url_is_relative_to_data_dir(monkeypatch, tmp_path):
 def test_safe_upload_name_blocks_traversal_and_bad_ext(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     import importlib
+
     from content_machine import app as appmod
     importlib.reload(appmod)
     assert appmod.safe_upload_name("talk.mp4") == "talk.mp4"
@@ -205,8 +206,9 @@ def test_save_clip_edit_builds_edit_and_targets_aspects(monkeypatch, tmp_path):
 def test_rerender_queues_second_edit_while_busy(monkeypatch, tmp_path):
     """An edit made while a render is in flight must queue and run after — never lost."""
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
-    from content_machine import app, render
     import threading as _t
+
+    from content_machine import app, render
     d = _make_job(tmp_path, "qqqq", {"render": {"status": "done"}})
     (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
     started = _t.Event()
@@ -256,8 +258,9 @@ def test_rerender_failure_surfaces_error(monkeypatch, tmp_path):
 
 def test_save_clip_edit_rejects_too_short_trim(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
-    from content_machine import app
     import pytest
+
+    from content_machine import app
     d = _make_job(tmp_path, "hhhh", {"render": {"status": "done"}})
     (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
     with pytest.raises(Exception):

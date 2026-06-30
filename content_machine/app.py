@@ -15,14 +15,13 @@ import threading
 import traceback
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import config
-from .jobs import Job, compute_job_id, STAGES
-from . import transcribe, select, render, captions
+from . import captions, config, render, select, transcribe
+from .jobs import STAGES, Job, compute_job_id
 from .logging_setup import get_logger, job_log, job_log_path, tail
 
 log = get_logger(__name__)
@@ -322,7 +321,7 @@ async def upload(video: UploadFile = File(...)):
     try:
         safe_name = safe_upload_name(video.filename)  # blocks path traversal
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     tmp = UPLOADS / safe_name
     with open(tmp, "wb") as f:
         shutil.copyfileobj(video.file, f)

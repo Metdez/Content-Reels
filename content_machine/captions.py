@@ -15,14 +15,13 @@ Caption events come from transcript segments, re-timed relative to the clip.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import textwrap
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
-
-import os
 
 # Bold, legible sans-serif candidates across OSes. Windows fonts first when on
 # Windows, then macOS, then common Linux paths — first existing wins.

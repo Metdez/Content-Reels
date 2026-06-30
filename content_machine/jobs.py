@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
@@ -45,13 +45,13 @@ class Job:
     data_dir: Path
 
     @classmethod
-    def for_video(cls, video_path: str | Path) -> "Job":
+    def for_video(cls, video_path: str | Path) -> Job:
         video_path = Path(video_path)
         job_id = compute_job_id(video_path)
         return cls(job_id=job_id, source_name=video_path.name, data_dir=config.DATA_DIR / job_id)
 
     @classmethod
-    def load(cls, job_id: str) -> "Job":
+    def load(cls, job_id: str) -> Job:
         d = config.DATA_DIR / job_id
         if not (d / "job.json").exists():
             raise FileNotFoundError(f"No job found: {job_id}")

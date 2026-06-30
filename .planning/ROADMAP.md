@@ -497,7 +497,7 @@ Continues numbering after v5.1 (Phases 20–22). Derived from `.planning/v6-DISC
 
 **"Better" criteria (priority order):** Correctness → Reliability → Error-handling/UX clarity → Accessibility (WCAG 2.1 AA) → Test coverage → Performance → Code quality. A change ships only if it improves ≥1 criterion without regressing another, and is covered by a test.
 
-- [ ] **Phase 23: Test Harness & CI Foundation** - pytest-cov baseline, `TestClient` fixtures, Playwright harness + seeded job fixtures, `ruff` lint, CI workflow
+- [x] **Phase 23: Test Harness & CI Foundation** - pytest-cov baseline (64.2%), `TestClient` fixtures, Playwright seed harness, `ruff` (clean), CI workflow ✓ (64 tests pass)
 - [ ] **Phase 24: Backend Unit Coverage** - tests for `config`/`cli`/`logging_setup`/render orchestration/captions/`run_claude`/transcribe layers
 - [ ] **Phase 25: HTTP API Integration Tests** - every endpoint at the request boundary, incl. validation/404/409/400/traversal/legacy
 - [ ] **Phase 26: Reliability — Atomic Manifests + Locking** - atomic temp-rename writes + per-job lock + tolerant reads; cross-clip `render.json` integrity
