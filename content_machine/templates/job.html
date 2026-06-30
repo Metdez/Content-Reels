@@ -37,7 +37,7 @@
     font-weight:700;padding:2px 7px;border-radius:6px;line-height:1.4;white-space:nowrap}
   .aspects{display:flex;gap:7px;margin:14px 0 4px}
   .asp{font-size:12.5px;font-weight:600;padding:6px 13px;border:1px solid var(--line);border-radius:999px;
-    cursor:pointer;color:var(--mut);background:#131a26}
+    cursor:pointer;color:var(--mut);background:#131a26;box-shadow:none;font-family:inherit;line-height:1.2}
   .asp.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .sliderrow{display:flex;align-items:center;gap:12px;margin-top:14px}
   .sliderrow>span:first-child{min-width:58px;font-size:12.5px;color:var(--mut)}
@@ -110,11 +110,12 @@
   h3.sec{font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 14px}
   .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
   .clip{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column}
-  .clip video{width:100%;border-radius:10px;background:#000;max-height:540px}
+  .clip video{width:100%;border-radius:10px;background:#000;max-height:420px}
   .clip .title{font-weight:600;margin:11px 0 3px;font-size:15px}
   .clip .score{color:var(--ok);font-size:12.5px} .clip .why{color:var(--mut);font-size:13px;margin:7px 0}
   .tabs{display:flex;gap:6px;margin:9px 0 2px}
-  .tab{font-size:12px;font-weight:600;padding:4px 11px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut)}
+  .tab{font-size:12px;font-weight:600;padding:4px 11px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut);
+    background:transparent;box-shadow:none;font-family:inherit;line-height:1.2}
   .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .clip .actions{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:12px}
   .dl{display:flex;gap:12px;font-size:13px;flex-wrap:wrap} .dl a{font-weight:600}
@@ -125,7 +126,9 @@
   .modal.open{display:flex}
   .modal .inner{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:760px;width:100%;
     max-height:92vh;overflow:auto;box-shadow:var(--shadow)}
-  .modal h2{margin-bottom:2px} .modal .x{float:right;cursor:pointer;color:var(--mut);font-size:20px;line-height:1}
+  .modal h2{margin-bottom:2px} .modal .x{float:right;cursor:pointer;color:var(--mut);font-size:20px;line-height:1;
+    background:none;border:0;padding:0;box-shadow:none;font-family:inherit}
+  .modal .x:hover{filter:none;color:var(--fg)}
   /* quick-crop re-render progress */
   .rasps{display:flex;flex-direction:column;gap:7px;margin-top:4px}
   .rasp{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border:1px solid var(--line);
@@ -148,11 +151,11 @@
 </main>
 
 <!-- Quick-crop modal -->
-<div class="modal" id="modal"><div class="inner">
-  <span class="x" onclick="closeModal()">✕</span>
-  <h2>Quick crop</h2>
+<div class="modal" id="modal"><div class="inner" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+  <button type="button" class="x" id="mclose" aria-label="Close quick crop dialog" onclick="closeModal()">✕</button>
+  <h2 id="mtitle">Quick crop</h2>
   <p class="lead" id="mlead">Pick a ratio, set its zoom &amp; position, then re-render. Each ratio keeps its own framing.</p>
-  <div class="aspects" id="masps"></div>
+  <div class="aspects" id="masps" role="group" aria-label="Output aspect ratio"></div>
   <div class="previewgrid">
     <div>
       <p class="panelcap">Source — highlighted area is kept</p>
@@ -166,14 +169,14 @@
       <p class="hint" style="margin-top:7px">Scroll to zoom · drag to pan · or use the sliders</p>
     </div>
   </div>
-  <div class="sliderrow"><span>Zoom</span>
-    <input type="range" id="mzoom" min="1" max="3" step="0.05" value="1">
+  <div class="sliderrow"><span id="mzlbl">Zoom</span>
+    <input type="range" id="mzoom" min="1" max="3" step="0.05" value="1" aria-label="Zoom" aria-describedby="mzval">
     <span class="val" id="mzval">1.00×</span></div>
-  <div class="sliderrow"><span>Position&nbsp;X</span>
-    <input type="range" id="moff" min="-1" max="1" step="0.02" value="0">
+  <div class="sliderrow"><span id="mxlbl">Position&nbsp;X</span>
+    <input type="range" id="moff" min="-1" max="1" step="0.02" value="0" aria-label="Horizontal position" aria-describedby="mval">
     <span class="val" id="mval">center</span></div>
-  <div class="sliderrow"><span>Position&nbsp;Y</span>
-    <input type="range" id="moffy" min="-1" max="1" step="0.02" value="0">
+  <div class="sliderrow"><span id="mylbl">Position&nbsp;Y</span>
+    <input type="range" id="moffy" min="-1" max="1" step="0.02" value="0" aria-label="Vertical position" aria-describedby="myval">
     <span class="val" id="myval">center</span></div>
   <div class="hint" id="mhint"></div>
   <button class="copyall" id="mcopy">⧉ Copy this framing to all ratios</button>
@@ -181,12 +184,12 @@
   <!-- progress + log: revealed on re-render -->
   <div id="mprog" style="display:none">
     <div class="master" id="mmaster" style="margin:18px 0 12px">
-      <div class="lbl"><span id="mproglbl">Rendering…</span><span class="pct" id="mprogpct">0%</span></div>
+      <div class="lbl"><span id="mproglbl" aria-live="polite">Rendering…</span><span class="pct" id="mprogpct">0%</span></div>
       <div class="barwrap"><div class="fill" id="mprogfill"></div></div>
     </div>
-    <div class="rasps" id="mrasps"></div>
+    <div class="rasps" id="mrasps" aria-live="polite"></div>
     <details class="logs" id="mlogwrap" open style="margin:12px 0 0">
-      <summary>📜 Live log</summary><pre id="mlog">waiting for render output…</pre></details>
+      <summary>📜 Live log</summary><pre id="mlog" aria-live="polite" aria-label="Render log">waiting for render output…</pre></details>
   </div>
 
   <div class="banner err" id="merr" style="display:none;margin-top:14px"></div>
@@ -201,6 +204,7 @@
 <script>
 const JOB="{{ job_id }}";
 const ASPECTS=["9:16","1:1","16:9"];
+const PREVIEW_CAP=420;   // unified preview height base (editor adds its MAG multiplier on top)
 let DATA=null, pollTimer=null, previewBuilt=false;
 
 /* crop math (computeCrop / drawBox / drawOut) lives in /static/crop.js as
@@ -236,7 +240,7 @@ function buildPreview(d){
    <div class="card">
      <h2>Preview &amp; frame each ratio</h2>
      <p class="lead">Pick a ratio, then set its <b>zoom</b> and <b>position</b>. The right panel is the exact output — nothing renders until you hit Run. Each ratio keeps its own framing.</p>
-     <div class="aspects" id="pasps">${ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('')}</div>
+     <div class="aspects" id="pasps" role="group" aria-label="Output aspect ratio">${ASPECTS.map((a,i)=>`<button type="button" class="asp ${i===0?'active':''}" aria-pressed="${i===0?'true':'false'}" aria-label="Frame ${a} ratio" data-a="${a}">${a}</button>`).join('')}</div>
      <div class="previewgrid">
        <div>
          <p class="panelcap">Source — highlighted area is kept
@@ -251,13 +255,13 @@ function buildPreview(d){
        </div>
      </div>
      <div class="sliderrow"><span>Zoom</span>
-       <input type="range" id="pzoom" min="1" max="3" step="0.05" value="1">
+       <input type="range" id="pzoom" min="1" max="3" step="0.05" value="1" aria-label="Zoom" aria-describedby="pzval">
        <span class="val" id="pzval">1.00×</span></div>
      <div class="sliderrow"><span>Position&nbsp;X</span>
-       <input type="range" id="poff" min="-1" max="1" step="0.02" value="0">
+       <input type="range" id="poff" min="-1" max="1" step="0.02" value="0" aria-label="Horizontal position" aria-describedby="pval">
        <span class="val" id="pval">center</span></div>
      <div class="sliderrow"><span>Position&nbsp;Y</span>
-       <input type="range" id="poffy" min="-1" max="1" step="0.02" value="0">
+       <input type="range" id="poffy" min="-1" max="1" step="0.02" value="0" aria-label="Vertical position" aria-describedby="pyval">
        <span class="val" id="pyval">center</span></div>
      <div class="hint" id="phint">${sw?`Source ${sw}×${sh}.`:'Could not read video size — framing still applies.'}</div>
      <button class="copyall" id="pcopy">⧉ Copy this framing to all ratios</button>
@@ -299,8 +303,8 @@ function buildPreview(d){
   startOutLoop(outframe,outcv,pvid,()=>aspect,()=>TF[aspect],()=>[sw,sh]);
   window.addEventListener('resize',redraw);
   document.querySelectorAll('#pasps .asp').forEach(el=>el.addEventListener('click',()=>{
-    document.querySelectorAll('#pasps .asp').forEach(x=>x.classList.remove('active'));
-    el.classList.add('active'); aspect=el.dataset.a; syncControls(); redraw(); }));
+    document.querySelectorAll('#pasps .asp').forEach(x=>{x.classList.remove('active');x.setAttribute('aria-pressed','false');});
+    el.classList.add('active'); el.setAttribute('aria-pressed','true'); aspect=el.dataset.a; syncControls(); redraw(); }));
   document.getElementById('preset').addEventListener('click',()=>{ TF[aspect]={zoom:1,x:0,y:0}; syncControls(); redraw(); });
   document.getElementById('pcopy').addEventListener('click',()=>{
     const t=TF[aspect]; ASPECTS.forEach(a=>{ TF[a]={zoom:t.zoom,x:t.x,y:t.y}; }); redraw(); });
@@ -330,13 +334,13 @@ function progressShell(){
   m.innerHTML=`
    <div class="card" style="padding:18px 20px">
      <div class="master" id="master" style="margin-bottom:14px">
-       <div class="lbl"><span id="masterlbl">Starting…</span><span class="pct" id="masterpct">0%</span></div>
+       <div class="lbl"><span id="masterlbl" aria-live="polite">Starting…</span><span class="pct" id="masterpct">0%</span></div>
        <div class="barwrap"><div class="fill" id="masterfill"></div></div>
      </div>
-     <div class="steps" id="steps"></div>
+     <div class="steps" id="steps" aria-live="polite"></div>
    </div>
-   <details class="logs" open><summary>📜 Live log <span class="spin" id="spin"></span></summary><pre id="log">waiting for pipeline output…</pre></details>
-   <div class="banner" id="status">Starting…</div>
+   <details class="logs" open><summary>📜 Live log <span class="spin" id="spin"></span></summary><pre id="log" aria-live="polite" aria-label="Pipeline log">waiting for pipeline output…</pre></details>
+   <div class="banner" id="status" role="status" aria-live="polite">Starting…</div>
    <h3 class="sec" id="clipsec" style="display:none">Clips</h3>
    <div class="clips" id="clips"></div>`;
 }
@@ -375,7 +379,7 @@ function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':
 function clipEl(c){
   const first=c.outputs["9:16"]||Object.values(c.outputs)[0]||"";
   const tabs=ASPECTS.filter(a=>c.outputs[a]).map((a,i)=>
-    `<span class="tab ${i===0?'active':''}" data-src="${c.outputs[a]}" data-clip="${c.index}" data-a="${a}">${a}</span>`).join("");
+    `<button type="button" class="tab ${i===0?'active':''}" aria-pressed="${i===0?'true':'false'}" aria-label="Show ${a} version" data-src="${c.outputs[a]}" data-clip="${c.index}" data-a="${a}">${a}</button>`).join("");
   const dls=ASPECTS.filter(a=>c.outputs[a]).map(a=>`<a href="/download/${JOB}/${c.index}/${a}">↓ ${a}</a>`).join("");
   return `<div class="clip" id="clip${c.index}">
     <video src="${first}" ${c.thumb?`poster="${c.thumb}"`:''} controls preload="metadata" id="vid${c.index}"></video>
@@ -384,8 +388,8 @@ function clipEl(c){
     <div class="score">${c.score!=null?('★ '+c.score):''}${c.captions?(' · '+c.captions+' captions'):''}</div>
     <div class="why">${esc(c.rationale)||''}</div>
     <div class="actions">
-      <a class="adjust" href="/job/${JOB}/clip/${c.index}/edit" style="text-decoration:none">✎ Edit clip</a>
-      <button class="adjust" onclick="openModal(${c.index})">✂ Quick crop</button>
+      <a class="adjust" href="/job/${JOB}/clip/${c.index}/edit" style="text-decoration:none" aria-label="Edit clip ${c.index} in full editor">✎ Edit clip</a>
+      <button class="adjust" onclick="openModal(${c.index})" aria-label="Quick crop clip ${c.index}">✂ Quick crop</button>
       <div class="dl">${dls}</div>
     </div></div>`;
 }
@@ -406,8 +410,8 @@ function reconcileClips(clips){
 document.addEventListener('click',e=>{
   if(e.target.classList.contains('tab')){
     const idx=e.target.dataset.clip;
-    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>t.classList.remove('active'));
-    e.target.classList.add('active');
+    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{t.classList.remove('active');t.setAttribute('aria-pressed','false');});
+    e.target.classList.add('active'); e.target.setAttribute('aria-pressed','true');
     const v=document.getElementById('vid'+idx); v.src=e.target.dataset.src; v.load();
   }
 });
@@ -430,17 +434,19 @@ function mredraw(){
   $('mhint').textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${maspect}.`
                               : 'Could not read video size — framing still applies.';
 }
+let modalOpener=null;
 async function openModal(idx){
   const c=DATA.clips.find(c=>c.index===idx); if(!c) return;
+  modalOpener=document.activeElement;          // a11y: remember opener to restore focus on close
   MCLIP=c; maspect="9:16"; MTF=newTF(); mRKey='';
   // seed from any saved framing so quick-crop and the full editor stay in sync
   try{ const r=await fetch(`/api/job/${JOB}/clip/${idx}`);
        if(r.ok){ const d=await r.json(); const tf=d.transforms||{};
          ASPECTS.forEach(a=>{ if(tf[a]) MTF[a]={zoom:+tf[a].zoom||1,x:+tf[a].x||0,y:+tf[a].y||0}; }); } }catch(e){}
   const masps=$('masps');
-  masps.innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('');
+  masps.innerHTML=ASPECTS.map((a,i)=>`<button type="button" class="asp ${i===0?'active':''}" aria-pressed="${i===0?'true':'false'}" aria-label="Frame ${a} ratio" data-a="${a}">${a}</button>`).join('');
   masps.querySelectorAll('.asp').forEach(el=>el.addEventListener('click',()=>{
-    masps.querySelectorAll('.asp').forEach(x=>x.classList.remove('active')); el.classList.add('active');
+    masps.querySelectorAll('.asp').forEach(x=>{x.classList.remove('active');x.setAttribute('aria-pressed','false');}); el.classList.add('active'); el.setAttribute('aria-pressed','true');
     maspect=el.dataset.a; msync(); mredraw(); }));
   const mvid=$('mvid'); mvid.src=DATA.source_url;
   mvid.addEventListener('loadedmetadata',()=>{ try{ mvid.currentTime=Math.max(0,(c.start||0)+0.1); }catch(e){} mredraw(); },{once:true});
@@ -449,9 +455,11 @@ async function openModal(idx){
   $('merr').style.display='none'; $('merr').textContent='';
   $('mgo').disabled=false; $('mgo').textContent='Re-render clip';
   $('modal').classList.add('open'); msync(); mredraw();
+  setTimeout(()=>{ const cb=$('mclose'); if(cb) cb.focus(); },0);   // a11y: move focus into the dialog
 }
 function closeModal(){ $('modal').classList.remove('open'); if(mLogTimer){clearInterval(mLogTimer);mLogTimer=null;}
-  const v=$('mvid'); v.pause(); v.removeAttribute('src'); v.load(); }   // render poll keeps running so the card refreshes
+  const v=$('mvid'); v.pause(); v.removeAttribute('src'); v.load();   // render poll keeps running so the card refreshes
+  if(modalOpener&&modalOpener.focus){ try{modalOpener.focus();}catch(_){ } } modalOpener=null; }   // a11y: restore focus to opener
 
 function resetMProg(){ $('mprogfill').style.width='0%'; $('mprogpct').textContent='0%';
   $('mproglbl').textContent='Rendering…'; $('mrasps').innerHTML=''; $('mlog').textContent='waiting for render output…'; }
@@ -534,13 +542,27 @@ function mGo(){
 ['mzoom','moff','moffy'].forEach(id=>$(id).addEventListener('input',mredraw));
 $('mcopy').addEventListener('click',()=>{ const t=MTF[maspect]; ASPECTS.forEach(a=>{MTF[a]={zoom:t.zoom,x:t.x,y:t.y};}); mredraw(); });
 $('mgo').addEventListener('click',mGo);
-startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],()=>(DATA&&DATA.source_dims)||[0,0],360);
+startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],()=>(DATA&&DATA.source_dims)||[0,0],PREVIEW_CAP);
+/* a11y: ESC closes the dialog; Tab/Shift+Tab stays trapped inside it */
+$('modal').addEventListener('keydown',e=>{
+  if(!$('modal').classList.contains('open')) return;
+  if(e.key==='Escape'){ e.preventDefault(); closeModal(); return; }
+  if(e.key!=='Tab') return;
+  const sel='button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),video[controls],[tabindex]:not([tabindex="-1"])';
+  const list=Array.from($('modal').querySelectorAll(sel)).filter(el=>el.offsetParent!==null);
+  if(!list.length) return;
+  const first=list[0], last=list[list.length-1];
+  if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+});
 /* direct manipulation on the modal preview: scroll = zoom, drag = pan (mirrors editor.html) */
 (function(){
   const of=$('moutframe'), cv=$('moutcv');
-  of.addEventListener('wheel',e=>{ e.preventDefault();
-    const t=MTF[maspect]; const z=t.zoom*Math.exp(-e.deltaY*0.0016);   // smooth, cursor-agnostic
-    t.zoom=Math.max(1,Math.min(3,Math.round(z*100)/100)); msync(); mredraw();
+  of.addEventListener('wheel',e=>{
+    const t=MTF[maspect], old=t.zoom;                                   // smooth, cursor-agnostic
+    const z=Math.max(1,Math.min(3,Math.round(t.zoom*Math.exp(-e.deltaY*0.0016)*100)/100));
+    if(z===old) return;                  // at a zoom limit → let the page scroll past
+    e.preventDefault(); t.zoom=z; msync(); mredraw();
   },{passive:false});
   let pan=null;
   of.addEventListener('pointerdown',e=>{ if(e.button!==0) return;

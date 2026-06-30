@@ -49,7 +49,8 @@
   .outframe .rt{position:absolute;top:8px;right:8px;z-index:2;background:rgba(10,12,16,.8);color:var(--accent2);
     font:700 11px ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
   .aspects{display:flex;gap:7px;margin:0 0 12px}
-  .asp{font-size:12.5px;font-weight:600;padding:6px 13px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut);background:#131a26}
+  .asp{font-size:12.5px;font-weight:600;padding:6px 13px;border:1px solid var(--line);border-radius:999px;cursor:pointer;color:var(--mut);background:#131a26;
+    box-shadow:none;font-family:inherit;line-height:1.2}
   .asp.active{background:var(--accent);color:#fff;border-color:var(--accent)}
   .asp .dirty{color:var(--warn);margin-left:5px}
 
@@ -65,7 +66,7 @@
   .track{position:relative;height:46px;background:#0c111a;border:1px solid var(--line);border-radius:10px;margin:6px 0 4px;cursor:pointer;user-select:none}
   .track .bound{position:absolute;top:8px;bottom:8px;width:1px;background:#2b3547}
   .track .sel{position:absolute;top:0;bottom:0;background:rgba(109,94,252,.22);border-left:2px solid var(--accent2);border-right:2px solid var(--accent2)}
-  .track .handle{position:absolute;top:0;bottom:0;width:12px;margin-left:-6px;cursor:ew-resize;display:flex;align-items:center;justify-content:center}
+  .track .handle{position:absolute;top:0;bottom:0;width:24px;margin-left:-12px;cursor:ew-resize;display:flex;align-items:center;justify-content:center;touch-action:none}
   .track .handle::after{content:"";width:4px;height:60%;background:var(--accent2);border-radius:3px}
   .track .play{position:absolute;top:0;bottom:0;width:2px;background:var(--ok);pointer-events:none;display:none}
   .trimrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px}
@@ -120,7 +121,7 @@
   <button class="back" id="back">← Back to clips</button>
   <h1 id="title">Edit clip</h1>
   <span class="sp"></span>
-  <span class="pill" id="pill">Idle</span>
+  <span class="pill" id="pill" role="status" aria-live="polite">Idle</span>
   <span class="small" id="dims"></span>
 </header>
 <main id="main"><div class="boot" id="bootmsg">Loading editor…</div></main>
@@ -129,6 +130,7 @@
 <script>
 const JOB="{{ job_id }}", IDX={{ idx }};
 const ASPECTS=["9:16","1:1","16:9"];
+const PREVIEW_CAP=420;   // unified preview height base (MAG magnifier multiplies on top)
 let D=null, TF={}, aspect="9:16";
 let trimIn=0, trimOut=0, winStart=0, winEnd=0, dur=0;
 let caps=[], capsOn=true, capsEdited=false, audio={mute:false,volume:1};
@@ -140,9 +142,9 @@ let MAG=1;   // preview magnifier (inspect zoom) — does NOT change output fram
    window.CMCrop — single source of truth, locked to render.compute_crop by
    tests/test_crop_parity.py. Source dims come from the server payload (sw/sh
    from D.source_dims); the video intrinsic dims are only a fallback. The output
-   cap is 420*MAG (MAG = preview magnifier), evaluated live each frame. */
+   cap is PREVIEW_CAP*MAG (MAG = preview magnifier), evaluated live each frame. */
 function startOutLoop(frame,cv,video,getAspect,getTF){
-  function loop(){ if(!cv.isConnected) return; CMCrop.drawOut(frame,cv,sw,sh,video,getAspect(),getTF(),420*MAG); requestAnimationFrame(loop); }
+  function loop(){ if(!cv.isConnected) return; CMCrop.drawOut(frame,cv,sw,sh,video,getAspect(),getTF(),PREVIEW_CAP*MAG); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 }
 function fmt(t){ t=Math.max(0,t); const m=Math.floor(t/60), s=(t%60); return m+':'+s.toFixed(2).padStart(5,'0'); }
@@ -251,19 +253,19 @@ function buildUI(){
    <div class="grid">
      <div>
        <div class="card">
-         <div class="aspects" id="asps"></div>
+         <div class="aspects" id="asps" role="group" aria-label="Output aspect ratio"></div>
          <div class="stagegrid">
            <div><p class="cap">Source — drag sliders to reframe</p>
              <div class="cropwrap" id="cw"><video id="srcvid" src="${D.source_url}" muted playsinline controls preload="metadata"></video>
                <div class="cropbox" id="box"><span class="tag" id="tag">9:16</span></div></div></div>
-           <div><p class="cap">Output preview <span style="flex:1"></span><button class="mini" id="magbtn" style="padding:3px 9px">🔍 Inspect 1×</button></p>
+           <div><p class="cap">Output preview <span style="flex:1"></span><button class="mini" id="magbtn" style="padding:3px 9px" aria-label="Toggle preview magnifier (does not change output framing)">🔍 Inspect 1×</button></p>
              <div class="outframe" id="of"><span class="rt" id="rt">9:16</span>
                <canvas id="outcv"></canvas></div>
              <p class="pvhint">Scroll to zoom · drag to pan · 🔍 to magnify</p></div>
          </div>
-         <div class="sliderrow"><span>Zoom</span><input type="range" id="zoom" min="1" max="3" step="0.05"><span class="val" id="zv">1.00×</span></div>
-         <div class="sliderrow"><span>Position X</span><input type="range" id="ox" min="-1" max="1" step="0.02"><span class="val" id="xv">center</span></div>
-         <div class="sliderrow"><span>Position Y</span><input type="range" id="oy" min="-1" max="1" step="0.02"><span class="val" id="yv">center</span></div>
+         <div class="sliderrow"><span>Zoom</span><input type="range" id="zoom" min="1" max="3" step="0.05" aria-label="Zoom" aria-describedby="zv"><span class="val" id="zv">1.00×</span></div>
+         <div class="sliderrow"><span>Position X</span><input type="range" id="ox" min="-1" max="1" step="0.02" aria-label="Horizontal position" aria-describedby="xv"><span class="val" id="xv">center</span></div>
+         <div class="sliderrow"><span>Position Y</span><input type="range" id="oy" min="-1" max="1" step="0.02" aria-label="Vertical position" aria-describedby="yv"><span class="val" id="yv">center</span></div>
          <div class="miniact"><button class="mini" id="copyall">⧉ Copy framing to all ratios</button><button class="mini" id="resetf">Reset ratio framing</button></div>
        </div>
        <div class="card">
@@ -286,7 +288,7 @@ function buildUI(){
      </div>
      <div>
        <div class="card" id="rendercard" style="display:none">
-         <h2>Re-render <span class="small" id="rsummary" style="text-transform:none;letter-spacing:0"></span></h2>
+         <h2>Re-render <span class="small" id="rsummary" style="text-transform:none;letter-spacing:0" aria-live="polite"></span></h2>
          <div class="rstat">
            <div class="rbar"><i id="rfill"></i></div>
            <div class="rasps" id="rasps"></div>
@@ -301,12 +303,12 @@ function buildUI(){
        <div class="card">
          <h2>Audio</h2>
          <label class="toggle"><input type="checkbox" id="mute"> Mute audio</label>
-         <div class="sliderrow"><span>Volume</span><input type="range" id="vol" min="0" max="2" step="0.05"><span class="val" id="volv">100%</span></div>
+         <div class="sliderrow"><span>Volume</span><input type="range" id="vol" min="0" max="2" step="0.05" aria-label="Volume" aria-describedby="volv"><span class="val" id="volv">100%</span></div>
        </div>
      </div>
    </div>
    <div class="applybar">
-     <span class="status" id="status">No changes yet.</span><span class="sp"></span>
+     <span class="status" id="status" role="status" aria-live="polite">No changes yet.</span><span class="sp"></span>
      <button class="ghost" id="cancel">Back without saving</button>
      <button id="apply" disabled>Apply &amp; re-render</button>
    </div>`;
@@ -318,7 +320,7 @@ function wire(){
   const capBad=new Set();   // FE-07: keys (i-k) of caption time inputs failing validation
   // aspect tabs
   function renderTabs(){
-    $('asps').innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${a===aspect?'active':''}" data-a="${a}">${a}${dirtyAspects.has(a)?'<span class="dirty">●</span>':''}</span>`).join('');
+    $('asps').innerHTML=ASPECTS.map((a)=>`<button type="button" class="asp ${a===aspect?'active':''}" aria-pressed="${a===aspect?'true':'false'}" aria-label="Show ${a} crop${dirtyAspects.has(a)?', unsaved changes':''}" data-a="${a}">${a}${dirtyAspects.has(a)?'<span class="dirty" aria-hidden="true">●</span>':''}</button>`).join('');
     $('asps').querySelectorAll('.asp').forEach(el=>el.addEventListener('click',()=>{ aspect=el.dataset.a; sync(); redraw(); renderTabs(); }));
   }
   const srcvid=$('srcvid'), outcv=$('outcv');
@@ -327,7 +329,7 @@ function wire(){
     const t=TF[aspect]; const c=CMCrop.computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
     const box=$('box'); if(sw&&sh){ box.style.display='block'; box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
       box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%'; } $('tag').textContent=aspect;
-    CMCrop.drawOut($('of'),outcv,sw,sh,srcvid,aspect,t,420*MAG); $('rt').textContent=aspect;
+    CMCrop.drawOut($('of'),outcv,sw,sh,srcvid,aspect,t,PREVIEW_CAP*MAG); $('rt').textContent=aspect;
     $('zv').textContent=(+t.zoom).toFixed(2)+'×'; $('xv').textContent=offLabel(t.x); $('yv').textContent=yLabel(t.y);
     $('ox').disabled=!(c.sx>1); $('oy').disabled=!(c.sy>1);
   }
@@ -344,10 +346,10 @@ function wire(){
   /* ---- direct manipulation on the live preview: scroll = zoom, drag = pan ---- */
   const of=$('of');
   of.addEventListener('wheel',e=>{
-    e.preventDefault();
-    const t=TF[aspect];
-    const z=t.zoom*Math.exp(-e.deltaY*0.0016);           // smooth, cursor-agnostic
-    t.zoom=Math.max(1,Math.min(3,Math.round(z*100)/100));
+    const t=TF[aspect], old=t.zoom;                      // smooth, cursor-agnostic
+    const z=Math.max(1,Math.min(3,Math.round(t.zoom*Math.exp(-e.deltaY*0.0016)*100)/100));
+    if(z===old) return;                                  // at a zoom limit → let the page scroll past
+    e.preventDefault(); t.zoom=z;
     dirtyAspects.add(aspect); sync(); redraw(); renderTabs(); markDirty();
   },{passive:false});
   let pan=null;
@@ -436,10 +438,10 @@ function wire(){
   function renderCaps(){
     capBad.clear();                            // DOM rebuilt with last-valid values → clear stale errors
     $('caps').innerHTML = caps.length? caps.map((c,i)=>`<div class="caprow">
-       <input class="t" data-i="${i}" data-k="start" value="${(+c.start).toFixed(2)}">
-       <input class="t" data-i="${i}" data-k="end" value="${(+c.end).toFixed(2)}">
-       <input data-i="${i}" data-k="text" value="${(c.text||'').replace(/"/g,'&quot;')}">
-       <div class="caperr" data-err="${i}"></div></div>`).join('')
+       <input class="t" data-i="${i}" data-k="start" value="${(+c.start).toFixed(2)}" aria-label="Caption ${i+1} start time in seconds">
+       <input class="t" data-i="${i}" data-k="end" value="${(+c.end).toFixed(2)}" aria-label="Caption ${i+1} end time in seconds">
+       <input data-i="${i}" data-k="text" value="${(c.text||'').replace(/"/g,'&quot;')}" aria-label="Caption ${i+1} text">
+       <div class="caperr" data-err="${i}" role="alert"></div></div>`).join('')
        : '<p class="small">No caption segments in this clip.</p>';
     $('caps').querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{
       const i=+inp.dataset.i, k=inp.dataset.k;

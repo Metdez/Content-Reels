@@ -7,10 +7,10 @@ last_updated: "2026-06-30T15:53:15.536Z"
 last_activity: 2026-06-30
 progress:
   total_phases: 14
-  completed_phases: 9
-  total_plans: 9
-  completed_plans: 9
-  percent: 64
+  completed_phases: 10
+  total_plans: 10
+  completed_plans: 10
+  percent: 71
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 32 of 36 — next up (Accessibility Pass, WCAG 2.1 AA); Phases 23–31 complete (9/14).
+Phase: 33 of 36 — next up (Adopt: word-level timing → cut-snapping); Phases 23–32 complete (10/14). **Frontend track (29–32) DONE.** Feature-adoption track begins (33–34).
 Plan: —
-Status: Phase 31 (frontend correctness) shipped — /captions re-derive endpoint (real, trim-scoped), editor source <video controls>, caption time validation that blocks Apply, media_url ?v=mtime cache-bust; 201 tests pass; ruff clean; coverage 92.6%; live-verified (/captions, ?v=, controls, validation, 0 console errors). Dev server on current code (logs/serve_v6.log, :8000). Running autonomously.
-Last activity: 2026-06-30 — Phase 31 complete (FE-05…08)
+Status: Phase 32 (accessibility WCAG 2.1 AA) shipped — real <button> tabs + aria-pressed, modal role=dialog/focus-trap/ESC/focus-return, slider labels + aria-live, 24px trim handles, wheel scroll-trap fix, drop type/size guard, unified PREVIEW_CAP=420; axe 0 critical/serious (0 total WCAG 2A/AA) on all 3 pages; keyboard nav verified; 201 tests pass; ruff clean. Running autonomously.
+Last activity: 2026-06-30 — Phase 32 complete (A11Y-01…04)
 
 ### v6 progress
 
