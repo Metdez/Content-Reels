@@ -305,7 +305,7 @@ def render_clip(job: Job, clip: dict, idx: int, segments: list[dict],
 def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
                  caption_mode: str = "overlay", transforms: dict | None = None,
                  aspects: tuple[str, ...] | None = None,
-                 edit: dict | None = None) -> dict:
+                 edit: dict | None = None, on_aspect_done=None) -> dict:
     """Re-render a single clip after a UI tweak (framing / trim / captions / audio).
 
     The full editor state is persisted non-destructively to clips/clipNN/edit.json
@@ -340,7 +340,8 @@ def rerender_one(job_id_or_job, idx: int, x_offset: float = 0.0,
 
     result = render_clip(job, clips[idx - 1], idx, segments, target_aspects,
                          x_offset, caption_mode, transforms=merged_tf,
-                         prev_outputs=prev_outputs, edit=stored)
+                         prev_outputs=prev_outputs, edit=stored,
+                         on_aspect_done=on_aspect_done)
     # patch render.json for this clip so the library/UI reflect the re-render
     others = [c for c in manifest.get("clips", []) if c.get("index") != idx]
     manifest["clips"] = sorted(others + [result], key=lambda c: c["index"])

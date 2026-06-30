@@ -73,6 +73,106 @@ def media_url(path: str | Path) -> str:
     return f"/media/{rel.as_posix()}"
 
 
+# --- background clip re-render (non-blocking + queued, per clip) --------------
+# (job_id, idx) -> tracker dict. One worker thread per clip drains a single-slot
+# queue, so an edit made while a render runs is applied *after* it — never
+# blocked, never raced (one ffmpeg writing a clip's outputs at a time). Mirrors
+# the main pipeline's in-process daemon-thread model; in-memory is fine for one
+# local user. Tracker shape:
+#   {status: queued|rendering|done|error, aspects: {a: queued|rendering|done|error},
+#    outputs: {a: media_url}, result: payload|None, error: str|None,
+#    pending: {edit, aspects}|None, thread: Thread|None}
+_RERENDER: dict[tuple[str, int], dict] = {}
+_RERENDER_LOCK = threading.Lock()
+
+
+def _rerender_payload(result: dict) -> dict:
+    return {
+        "index": result.get("index"),
+        "start": result.get("start"),
+        "end": result.get("end"),
+        "audio": result.get("audio"),
+        "transforms": result.get("transforms"),
+        "outputs": {a: media_url(p) for a, p in result.get("outputs", {}).items()},
+    }
+
+
+def _rerender_worker(job_id: str, idx: int) -> None:
+    key = (job_id, idx)
+    while True:
+        with _RERENDER_LOCK:
+            tr = _RERENDER.get(key)
+            req = tr.get("pending") if tr else None
+            if not tr or not req:
+                if tr:                                   # queue drained — settle
+                    tr["thread"] = None
+                    if tr.get("status") == "rendering":
+                        tr["status"] = "done"
+                return
+            tr["pending"] = None
+            tr["status"] = "rendering"
+            tr["error"] = None
+            req_aspects = tuple(req.get("aspects") or config.ASPECT_RATIOS)
+            # aspects encode serially (one NVENC engine): first is rendering, rest
+            # queued — the completion callback advances the next one.
+            for i, a in enumerate(req_aspects):
+                tr["aspects"][a] = "rendering" if i == 0 else "queued"
+
+        def cb(aspect, path):                            # per-aspect completion
+            with _RERENDER_LOCK:
+                tr["aspects"][aspect] = "done"
+                tr["outputs"][aspect] = media_url(path)
+                for a in req_aspects:                    # promote the next pending ratio
+                    if tr["aspects"].get(a) == "queued":
+                        tr["aspects"][a] = "rendering"
+                        break
+
+        try:
+            result = render.rerender_one(
+                job_id, idx, edit=req.get("edit"),
+                aspects=req_aspects or None, on_aspect_done=cb)
+            with _RERENDER_LOCK:
+                payload = _rerender_payload(result)
+                tr["result"] = payload
+                tr["outputs"].update(payload["outputs"])
+                for a in req_aspects:
+                    tr["aspects"][a] = "done"
+        except Exception as e:                           # surface, keep draining
+            log.error("re-render %s/clip%02d failed: %s\n%s",
+                      job_id, idx, e, traceback.format_exc())
+            with _RERENDER_LOCK:
+                tr["status"] = "error"
+                tr["error"] = str(e)
+                for a in req_aspects:
+                    if tr["aspects"].get(a) == "rendering":
+                        tr["aspects"][a] = "error"
+
+
+def _enqueue_rerender(job_id: str, idx: int, edit: dict, aspects: list[str]) -> None:
+    """Queue a clip re-render and ensure a worker is draining it. Non-blocking."""
+    key = (job_id, idx)
+    with _RERENDER_LOCK:
+        tr = _RERENDER.get(key)
+        alive = bool(tr and tr.get("thread") and tr["thread"].is_alive())
+        if not alive:                                    # fresh tracker, keep last outputs
+            tr = {"status": "queued", "aspects": {},
+                  "outputs": dict((tr or {}).get("outputs") or {}),
+                  "result": (tr or {}).get("result"),
+                  "error": None, "pending": None, "thread": None}
+            _RERENDER[key] = tr
+        tr["pending"] = {"edit": edit, "aspects": list(aspects)}
+        tr["status"] = "queued" if not alive else "rendering"
+        tr["error"] = None
+        for a in aspects:
+            if tr["aspects"].get(a) != "rendering":
+                tr["aspects"][a] = "queued"
+        if not alive:
+            t = threading.Thread(target=_rerender_worker, args=(job_id, idx),
+                                 daemon=True)
+            tr["thread"] = t
+            t.start()
+
+
 def _run_pipeline(job_id: str, source: Path, model: str | None, max_clips: int,
                   x_offset: float, captions_mode: str,
                   transforms: dict | None = None) -> None:
@@ -419,11 +519,32 @@ def save_clip_edit(job_id: str, idx: int, payload: dict = Body(...)):
         edit["captions"] = payload["captions"]
     if isinstance(payload.get("audio"), dict):
         edit["audio"] = payload["audio"]
-    result = render.rerender_one(job_id, idx, edit=edit, aspects=aspects)
-    return {"index": result["index"], "start": result.get("start"),
-            "end": result.get("end"), "audio": result.get("audio"),
-            "transforms": result.get("transforms"),
-            "outputs": {a: media_url(p) for a, p in result["outputs"].items()}}
+    qaspects = list(aspects) if aspects else list(config.ASPECT_RATIOS)
+    # Non-blocking: queue the re-render and return immediately so the editor
+    # stays interactive. The editor polls /rerender-status for progress.
+    _enqueue_rerender(job_id, idx, edit, qaspects)
+    return {"queued": True, "index": idx, "aspects": qaspects}
+
+
+@app.get("/api/job/{job_id}/clip/{idx}/rerender-status")
+def rerender_status(job_id: str, idx: int):
+    """Live state of a clip's background re-render (queue + per-aspect)."""
+    with _RERENDER_LOCK:
+        tr = _RERENDER.get((job_id, idx))
+        if not tr:
+            return JSONResponse({"active": False, "status": "idle", "aspects": {},
+                                 "outputs": {}, "result": None, "error": None,
+                                 "queued": False})
+        alive = bool(tr.get("thread") and tr["thread"].is_alive())
+        return JSONResponse({
+            "active": alive,
+            "status": tr.get("status", "idle"),
+            "aspects": dict(tr.get("aspects") or {}),
+            "outputs": dict(tr.get("outputs") or {}),
+            "result": tr.get("result"),
+            "error": tr.get("error"),
+            "queued": bool(tr.get("pending")),
+        })
 
 
 @app.get("/download/{job_id}/{idx}/{aspect}")

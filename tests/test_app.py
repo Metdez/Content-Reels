@@ -153,6 +153,20 @@ def test_clip_editor_payload_structure(monkeypatch, tmp_path):
     assert p["boundaries"][0] == 0.0 and p["duration"] == 30
 
 
+def _wait_rerender(app, key, timeout=5.0):
+    """Block until the per-clip re-render worker thread settles (or timeout)."""
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with app._RERENDER_LOCK:
+            tr = app._RERENDER.get(key)
+            t = tr.get("thread") if tr else None
+        if tr is not None and (t is None or not t.is_alive()):
+            return tr
+        time.sleep(0.02)
+    return app._RERENDER.get(key)
+
+
 def test_save_clip_edit_builds_edit_and_targets_aspects(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app, render
@@ -160,21 +174,64 @@ def test_save_clip_edit_builds_edit_and_targets_aspects(monkeypatch, tmp_path):
     (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
     cap = {}
 
-    def fake_rerender(job_id, idx, edit=None, aspects=None, **kw):
+    def fake_rerender(job_id, idx, edit=None, aspects=None, on_aspect_done=None, **kw):
         cap["job_id"], cap["idx"], cap["edit"], cap["aspects"] = job_id, idx, edit, aspects
+        if on_aspect_done:
+            on_aspect_done("9:16", str(d / "x.mp4"))
         return {"index": idx, "outputs": {"9:16": str(d / "x.mp4")},
                 "start": edit["start"], "end": edit["end"],
                 "audio": edit.get("audio"), "transforms": edit.get("transforms")}
     monkeypatch.setattr(render, "rerender_one", fake_rerender)
+    # endpoint is now non-blocking: returns a queued ack, work runs in background
     out = app.save_clip_edit("ffff", 1, payload={
         "start": 2.0, "end": 6.0, "transforms": {"9:16": {"zoom": 1.5, "x": 0, "y": 0}},
         "captions": {"mode": "none"}, "audio": {"mute": True, "volume": 1.0},
         "aspects": ["9:16", "bogus"]})
+    assert out["queued"] is True and out["index"] == 1
+    assert out["aspects"] == ["9:16"]                   # bogus aspect filtered out
+    tr = _wait_rerender(app, ("ffff", 1))
     assert cap["edit"]["start"] == 2.0 and cap["edit"]["end"] == 6.0
     assert cap["edit"]["captions"] == {"mode": "none"}
     assert cap["edit"]["audio"] == {"mute": True, "volume": 1.0}
-    assert cap["aspects"] == ("9:16",)                  # bogus aspect filtered out
-    assert out["index"] == 1 and out["outputs"]["9:16"].startswith("/media/ffff/")
+    assert cap["aspects"] == ("9:16",)                  # passed to renderer as tuple
+    # final tracker state: done, with the rendered output surfaced as a media url
+    assert tr["status"] == "done"
+    assert tr["aspects"]["9:16"] == "done"
+    assert tr["outputs"]["9:16"].startswith("/media/ffff/")
+    status = json.loads(app.rerender_status("ffff", 1).body)
+    assert status["status"] == "done" and status["active"] is False
+
+
+def test_rerender_queues_second_edit_while_busy(monkeypatch, tmp_path):
+    """An edit made while a render is in flight must queue and run after — never lost."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app, render
+    import threading as _t
+    d = _make_job(tmp_path, "qqqq", {"render": {"status": "done"}})
+    (d / "clips.json").write_text(json.dumps({"clips": [{"start": 1, "end": 5}]}))
+    started = _t.Event()
+    release = _t.Event()
+    calls = []
+
+    def fake_rerender(job_id, idx, edit=None, aspects=None, on_aspect_done=None, **kw):
+        calls.append(edit.get("start"))
+        if len(calls) == 1:                              # block the first render
+            started.set()
+            release.wait(timeout=5)
+        return {"index": idx, "outputs": {a: str(d / "x.mp4") for a in (aspects or ["9:16"])},
+                "start": edit["start"], "end": edit["end"]}
+    monkeypatch.setattr(render, "rerender_one", fake_rerender)
+
+    app.save_clip_edit("qqqq", 1, payload={"start": 2.0, "end": 6.0, "aspects": ["9:16"]})
+    assert started.wait(timeout=5)                       # first render is running
+    # second edit arrives mid-render → must be queued, not dropped, not blocking
+    app.save_clip_edit("qqqq", 1, payload={"start": 3.0, "end": 7.0, "aspects": ["9:16"]})
+    with app._RERENDER_LOCK:
+        assert app._RERENDER[("qqqq", 1)]["pending"] is not None
+    release.set()
+    tr = _wait_rerender(app, ("qqqq", 1))
+    assert calls == [2.0, 3.0]                           # both ran, in order
+    assert tr["status"] == "done"
 
 
 def test_save_clip_edit_rejects_too_short_trim(monkeypatch, tmp_path):

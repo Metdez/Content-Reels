@@ -119,10 +119,10 @@ Active milestone — Editing UX Revamp (background re-render + live progress, di
 
 ### Responsive Re-render
 
-- [ ] **EDITUX-01**: When the user clicks "Apply & re-render" in the clip editor, the re-render runs in the background and the page stays fully interactive (no frozen request, no disabled-everything spinner) — the user can scrub, switch aspects, and adjust framing while it runs
-- [ ] **EDITUX-02**: The editor shows a live progress indicator while a re-render runs — overall plus per-aspect state (queued / rendering / done / error) — driven by the render progress already written to `job.json`
-- [ ] **EDITUX-03**: Each re-rendered aspect's preview/thumbnail updates in place the moment that ratio finishes, not only when all ratios are done
-- [ ] **EDITUX-04**: If the user changes framing/trim/captions again while a render is in flight, the new render is queued and runs after the current one — no lost edits, never blocked
+- [x] **EDITUX-01**: When the user clicks "Apply & re-render" in the clip editor, the re-render runs in the background and the page stays fully interactive (no frozen request, no disabled-everything spinner) — the user can scrub, switch aspects, and adjust framing while it runs
+- [x] **EDITUX-02**: The editor shows a live progress indicator while a re-render runs — overall plus per-aspect state (queued / rendering / done / error) — driven by a per-clip re-render tracker polled by the editor
+- [x] **EDITUX-03**: Each re-rendered aspect's preview/thumbnail updates in place the moment that ratio finishes, not only when all ratios are done
+- [x] **EDITUX-04**: If the user changes framing/trim/captions again while a render is in flight, the new render is queued and runs after the current one — no lost edits, never blocked
 
 ### Direct-Manipulation Framing
 
@@ -233,10 +233,10 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EDITUX-01 | Phase 17 | Pending |
-| EDITUX-02 | Phase 17 | Pending |
-| EDITUX-03 | Phase 17 | Pending |
-| EDITUX-04 | Phase 17 | Pending |
+| EDITUX-01 | Phase 17 | Done |
+| EDITUX-02 | Phase 17 | Done |
+| EDITUX-03 | Phase 17 | Done |
+| EDITUX-04 | Phase 17 | Done |
 | EDITUX-05 | Phase 18 | Pending |
 | EDITUX-06 | Phase 18 | Pending |
 | EDITUX-07 | Phase 19 | Pending |

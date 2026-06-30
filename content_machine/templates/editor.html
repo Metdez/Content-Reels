@@ -76,6 +76,23 @@
   .toggle input{width:16px;height:16px;accent-color:var(--accent2)}
   .small{font-size:12.5px;color:var(--mut)}
 
+  /* re-render status */
+  .rstat{display:flex;flex-direction:column;gap:11px}
+  .rbar{height:8px;border-radius:6px;background:#0c111a;border:1px solid var(--line);overflow:hidden}
+  .rbar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s ease}
+  .rasps{display:flex;gap:10px;flex-wrap:wrap}
+  .rasp{flex:1;min-width:120px;background:#0c111a;border:1px solid var(--line);border-radius:10px;padding:9px;display:flex;flex-direction:column;gap:7px}
+  .rasp .lab{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:600}
+  .rasp .st{font-size:11px;color:var(--mut);font-weight:600}
+  .rasp video{width:100%;border-radius:6px;background:#000;display:block}
+  .rasp.done{border-color:rgba(63,185,80,.4)} .rasp.done .st{color:var(--ok)}
+  .rasp.rendering{border-color:rgba(210,153,34,.45)} .rasp.rendering .st{color:var(--warn)}
+  .rasp.error{border-color:rgba(248,81,73,.5)} .rasp.error .st{color:var(--err)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;background:var(--mut);vertical-align:middle}
+  .rasp.rendering .dot{background:var(--warn);animation:pulse 1s infinite}
+  .rasp.queued .dot{background:var(--mut);animation:pulse 1.6s infinite}
+  .rasp.done .dot{background:var(--ok)} .rasp.error .dot{background:var(--err)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
   .applybar{position:sticky;bottom:0;background:rgba(10,12,16,.92);backdrop-filter:blur(8px);border-top:1px solid var(--line);
     padding:14px 22px;display:flex;gap:14px;align-items:center;margin:0 -22px -80px;z-index:15}
   .applybar .status{color:var(--mut);font-size:13px}
@@ -142,6 +159,48 @@ function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.ro
 function yLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'↑ '+Math.round(-v*100)+'%':Math.round(v*100)+'% ↓'); }
 function nearestBound(t){ let best=t, bd=1e9; for(const b of BOUNDS){ const d=Math.abs(b-t); if(d<bd){bd=d;best=b;} } return {t:best,dist:bd}; }
 
+/* ---- background re-render: poll status, never block the page ---- */
+let rerenderTimer=null, rerenderActive=false;
+function bust(u){ return u?(u+(u.includes('?')?'&':'?')+'t='+Date.now()):u; }
+function renderRStat(s){
+  const card=document.getElementById('rendercard'); if(!card) return;
+  card.style.display='block';
+  const aspMap=s.aspects||{};
+  let list=ASPECTS.filter(a=>a in aspMap); if(!list.length) list=Object.keys(aspMap);
+  const total=list.length||1; let done=0;
+  document.getElementById('rasps').innerHTML=list.map(a=>{
+    const st=aspMap[a]; if(st==='done') done++;
+    const out=(s.outputs||{})[a];
+    const label={queued:'queued',rendering:'rendering…',done:'done ✓',error:'failed'}[st]||st||'';
+    return `<div class="rasp ${st||''}" data-a="${a}">
+       <div class="lab"><span><span class="dot"></span>${a}</span><span class="st">${label}</span></div>
+       ${out&&st==='done'?`<video src="${bust(out)}" muted playsinline preload="metadata"></video>`:''}
+     </div>`;
+  }).join('');
+  document.getElementById('rfill').style.width=Math.round(done/total*100)+'%';
+  let sum;
+  if(s.status==='error') sum='⚠ '+(s.error||'render failed');
+  else if(s.active||s.queued) sum=`rendering ${done}/${total}${s.queued?' · +1 queued':''}`;
+  else if(done>=total&&total) sum=`✓ all ${total} ${total>1?'ratios':'ratio'} rendered`;
+  else sum=`${done}/${total}`;
+  document.getElementById('rsummary').textContent=sum;
+}
+function pollRender(){
+  fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`).then(r=>r.json()).then(s=>{
+    renderRStat(s);
+    const busy=s.active||s.queued||s.status==='rendering'||s.status==='queued';
+    if(!busy){
+      clearInterval(rerenderTimer); rerenderTimer=null; rerenderActive=false;
+      const st=document.getElementById('status'); if(st){
+        st.textContent = s.status==='error'
+          ? '⚠ Re-render failed — '+(s.error||'see the job log')
+          : '✓ Re-render complete — keep editing or head back to clips.';
+      }
+    }
+  }).catch(()=>{});
+}
+function startPolling(){ if(!rerenderTimer){ rerenderActive=true; pollRender(); rerenderTimer=setInterval(pollRender,600); } }
+
 document.getElementById('back').addEventListener('click',()=>{ location.href=`/job/${JOB}`; });
 
 function buildUI(){
@@ -183,6 +242,13 @@ function buildUI(){
        </div>
      </div>
      <div>
+       <div class="card" id="rendercard" style="display:none">
+         <h2>Re-render <span class="small" id="rsummary" style="text-transform:none;letter-spacing:0"></span></h2>
+         <div class="rstat">
+           <div class="rbar"><i id="rfill"></i></div>
+           <div class="rasps" id="rasps"></div>
+         </div>
+       </div>
        <div class="card">
          <h2>Captions</h2>
          <label class="toggle"><input type="checkbox" id="capson"> Burn captions into this clip</label>
@@ -292,18 +358,26 @@ function wire(){
   function markDirty(){ const any=dirtyClip||dirtyAspects.size>0; $('apply').disabled=!any;
     $('status').textContent=any?(dirtyClip?'Trim/captions/audio changed → all ratios re-render':`Framing changed: ${[...dirtyAspects].join(', ')}`):'No changes yet.'; }
   $('cancel').addEventListener('click',()=>location.href=`/job/${JOB}`);
-  $('apply').addEventListener('click',async ev=>{
-    const btn=ev.target; btn.disabled=true; $('status').textContent='Re-rendering…';
+  $('apply').addEventListener('click',async ()=>{
     const aspectsToRender = dirtyClip ? ASPECTS : [...dirtyAspects];
+    if(!aspectsToRender.length) return;
     const body={ start:trimIn, end:trimOut, transforms:TF,
       captions: capsOn ? (capsEdited?{mode:'overlay',segments:caps}:{mode:'overlay'}) : {mode:'none'},
       audio:audio, aspects:aspectsToRender };
+    const queued = rerenderActive;
+    // Page stays interactive: clear the dirty markers (this edit is captured),
+    // so any further change re-arms Apply and simply queues the next render.
+    dirtyClip=false; dirtyAspects=new Set(); renderTabs(); markDirty();
+    $('status').textContent = queued
+      ? 'Queued — renders after the current one.'
+      : 'Re-rendering in the background — you can keep editing.';
+    document.getElementById('rendercard').style.display='block';
     try{
-      const r=await fetch(`/api/job/${JOB}/clip/${IDX}/edit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(!r.ok){ $('status').textContent='Failed: '+(await r.text()); btn.disabled=false; return; }
-      $('status').textContent='✓ Rendered. Returning to clips…';
-      setTimeout(()=>location.href=`/job/${JOB}`,700);
-    }catch(e){ $('status').textContent='Error: '+e; btn.disabled=false; }
+      const r=await fetch(`/api/job/${JOB}/clip/${IDX}/edit`,
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok){ $('status').textContent='Failed: '+(await r.text()); return; }
+      startPolling();
+    }catch(e){ $('status').textContent='Error: '+e; }
   });
 
   renderTabs(); sync(); redraw(); renderBounds(); renderTrim(); renderCaps(); markDirty();
@@ -324,6 +398,9 @@ function wire(){
   caps=JSON.parse(JSON.stringify(D.captions.segments||[])); capsOn=D.captions.mode!=='none';
   audio={mute:!!(D.audio&&D.audio.mute), volume:(D.audio&&D.audio.volume!=null)?D.audio.volume:1};
   buildUI();
+  // If a re-render for this clip is already running (e.g. navigated back in), resume the live view.
+  try{ const s=await (await fetch(`/api/job/${JOB}/clip/${IDX}/rerender-status`)).json();
+    if(s.active||s.queued||s.status==='rendering'||s.status==='queued'){ renderRStat(s); startPolling(); } }catch(e){}
 })();
 </script>
 </body>

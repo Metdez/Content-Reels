@@ -20,14 +20,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** Drop in one video and get back several genuinely good, caption-burned clips in 9:16/1:1/16:9 — locally, no cloud, no per-token API cost.
-**Current focus:** Milestone v4 — Cross-Platform Hardware Acceleration (GPU encode + probe/fallback). Phases 13–16 complete. v1.0 (P1–4), v2.0 (P5–8), v3 (P9–12) complete and verified live.
+**Current focus:** Milestone v5 — Editing UX Revamp (background re-render + live progress, direct-manipulation framing, flow polish). Phases 17–19. v1.0–v4 complete and verified live.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 17 of 19 complete
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-30 — Milestone v5 started
+Status: Phase 17 (Background Re-render + Live Editor Progress) built + verified live in the browser on EnlayeParis.mp4 (clip 1). Next: Phase 18 (direct-manipulation framing + magnifier).
+Last activity: 2026-06-30 — Phase 17 complete (EDITUX-01..04)
+
+### Verified live (v5, Windows 11, real ffmpeg/NVENC + browser)
+
+- P17 background re-render: `save_clip_edit` now enqueues onto a per-clip worker thread (`_RERENDER` tracker + `_enqueue_rerender` + `_rerender_worker`) and returns immediately — the editor never blocks. New `GET /clip/{idx}/rerender-status` exposes per-aspect state; `editor.html` polls it (600ms), shows an overall bar + per-aspect cards (queued/rendering/done/error) and drops each rendered output `<video>` in place as its ratio finishes. Aspects encode serially (1 NVENC engine): one "rendering", rest "queued", promoted on each completion. An edit made mid-render queues (single in-flight + 1 pending slot) and runs after — verified live: all-3 render showed `9:16 rendering · 1:1,16:9 queued` → progressed one-by-one; a second edit fired mid-flight set `queued:true` and ran after gen-1, nothing lost. `rerender_one` gained an `on_aspect_done` passthrough. 56 tests pass (+queue regression test).
 
 ### Verified live (v4, Windows 11, RTX 5060 + real binaries + ffprobe)
 
