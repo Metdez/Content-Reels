@@ -10,7 +10,10 @@ export PATH="/opt/homebrew/bin:$PATH"
 
 MODEL="${CM_WHISPER_MODEL:-base.en}"
 
-echo "==> 1/4 System deps (ffmpeg, cmake)"
+# GPU acceleration on macOS is automatic: Homebrew ffmpeg includes the
+# h264_videotoolbox encoder (the app probes + uses it, else falls back to CPU
+# libx264), and whisper.cpp is built with Metal below. Nothing extra to install.
+echo "==> 1/4 System deps (ffmpeg [VideoToolbox], cmake)"
 command -v ffmpeg >/dev/null 2>&1 || brew install ffmpeg
 command -v cmake  >/dev/null 2>&1 || brew install cmake
 

@@ -92,13 +92,13 @@ Active milestone — Cross-Platform Hardware Acceleration (GPU encode + GPU tran
 ### GPU Acceleration
 
 - [ ] **ACCEL-01**: Video encode is offloaded to the GPU when a usable encoder is detected (NVENC on Windows, VideoToolbox on Mac) — encode-only (CPU decode + CPU filters), with the three aspect ratios encoded serially; rendered clips remain valid in 9:16/1:1/16:9
-- [ ] **ACCEL-02**: On Windows, transcription runs on the RTX GPU via a CUDA (cuBLAS) whisper build when the GPU is available
+- [~] **ACCEL-02** *(deferred → Out of Scope, data-driven)*: Windows GPU transcription was attempted via the only prebuilt CUDA whisper (cuBLAS 12.4); it DETECTS the RTX 5060 but has no native Blackwell (sm_120) kernels and runs ~40× slower than CPU (48 s for 8 s audio; hangs with flash-attn). Transcription stays on the fast CPU BLAS build (~9× realtime). Native Blackwell whisper needs a from-source CUDA 12.8+ build — deferred (see BENCHMARKS.md).
 - [ ] **ACCEL-03**: On macOS, encode uses VideoToolbox and transcription uses Metal as the platform-tuned defaults
 
 ### Reliability & Fallback
 
 - [ ] **SAFE-01**: Any GPU encode failure (encoder init or mid-encode error) transparently falls back to CPU `libx264` so the output file is never missing or corrupt, with audio stream and `+faststart` intact
-- [ ] **SAFE-02**: If GPU whisper fails to initialize, transcription falls back to the CPU whisper build automatically
+- [~] **SAFE-02** *(moot — no GPU whisper shipped)*: With Windows transcription on CPU by decision (ACCEL-02 deferred), there is no GPU-whisper path to fall back from — the CPU BLAS build is the only path, which is the safe state this requirement aimed at.
 - [ ] **SAFE-03**: On hardware with no usable GPU, the pipeline runs exactly as before on CPU with no new errors — the GPU path is purely additive, and with GPU disabled the x264 output matches today's behavior
 
 ### Benchmark & Validation
@@ -129,6 +129,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Parallel multi-clip / multi-aspect GPU encoding | The RTX 5060 has a single NVENC engine (parallel ≈ no gain) and adds concurrency risk to the job runner; "must not break" → encode serially |
 | AV1 / HEVC output as default | h264 is the safe, universally-compatible social format; AV1/HEVC compatibility is inconsistent across platforms |
 | NVIDIA driver upgrade to unlock newer ffmpeg | Pinning a driver-compatible ffmpeg avoids a risky driver change; the latest ffmpeg's NVENC needs driver ≥610 vs the installed 591.74 |
+| GPU transcription on Windows (CUDA whisper) | The only prebuilt CUDA whisper (cuBLAS 12.4) has no native Blackwell/sm_120 kernels → ~40× slower than CPU on the RTX 5060. Native support needs a from-source CUDA 12.8+ build (toolkit install), against "dead-simple setup". CPU BLAS is already ~9× realtime. Deferred (ACCEL-02) |
 
 ## Traceability
 
@@ -189,16 +190,16 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ACCEL-01 | Phase 13 | Pending |
-| SAFE-01 | Phase 13 | Pending |
-| SAFE-03 | Phase 13 | Pending |
-| ACCEL-02 | Phase 14 | Pending |
-| SAFE-02 | Phase 14 | Pending |
-| BENCH-01 | Phase 14 | Pending |
-| BENCH-02 | Phase 14 | Pending |
-| PLAT-01 | Phase 14 | Pending |
-| ACCEL-03 | Phase 15 | Pending |
-| PLAT-02 | Phase 15 | Pending |
+| ACCEL-01 | Phase 13 | Done |
+| SAFE-01 | Phase 13 | Done |
+| SAFE-03 | Phase 13 | Done |
+| ACCEL-02 | Phase 14 | Deferred (Blackwell — see BENCHMARKS.md) |
+| SAFE-02 | Phase 14 | Moot (no GPU whisper) |
+| BENCH-01 | Phase 14 | Done |
+| BENCH-02 | Phase 14 | Done |
+| PLAT-01 | Phase 14 | Done (ffmpeg 7.1 pin; whisper stays CPU) |
+| ACCEL-03 | Phase 15 | Done (VideoToolbox+Metal defaults; probe/fallback unit-tested) |
+| PLAT-02 | Phase 15 | Done (Homebrew ffmpeg VideoToolbox + Metal whisper) |
 | PLAT-03 | Phase 16 | Pending |
 | PLAT-04 | Phase 16 | Pending |
 

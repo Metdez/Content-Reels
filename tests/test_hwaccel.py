@@ -32,6 +32,24 @@ def test_select_falls_back_when_gpu_probe_fails(monkeypatch):
     assert enc["key"] == "x264"                       # never raises — always usable
 
 
+def test_select_videotoolbox_on_macos(monkeypatch):
+    monkeypatch.delenv("CM_FORCE_CPU", raising=False)
+    monkeypatch.delenv("CM_ENCODER", raising=False)
+    monkeypatch.setattr(hwaccel.sys, "platform", "darwin")        # pretend macOS
+    monkeypatch.setattr(hwaccel, "_probe", lambda key: key in ("videotoolbox", "x264"))
+    enc = hwaccel.select_encoder()
+    assert enc["key"] == "videotoolbox" and enc["codec"] == "h264_videotoolbox"
+    assert "-allow_sw" in enc["args"]                              # SW VT fallback flag present
+
+
+def test_macos_falls_back_to_x264_when_videotoolbox_unavailable(monkeypatch):
+    monkeypatch.delenv("CM_FORCE_CPU", raising=False)
+    monkeypatch.delenv("CM_ENCODER", raising=False)
+    monkeypatch.setattr(hwaccel.sys, "platform", "darwin")
+    monkeypatch.setattr(hwaccel, "_probe", lambda key: key == "x264")  # VT absent (e.g. Intel)
+    assert hwaccel.select_encoder()["key"] == "x264"                   # never breaks on Mac
+
+
 def test_build_render_cmd_defaults_to_x264_but_honors_encoder():
     args = dict(src=Path("s.mp4"), start=0.0, end=5.0, aspect="9:16", x_offset=0.0,
                 out=Path("o.mp4"), src_w=1920, src_h=1080)

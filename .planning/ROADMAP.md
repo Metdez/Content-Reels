@@ -244,8 +244,8 @@ macOS via the same probe/fallback (Phase 15), then split into two thin platform 
 libx264 fallback on any failure.
 
 - [x] **Phase 13: Shared Hardware-Accel Core + Render Encoder Fallback** - `hwaccel.py` probes encoders once and returns the best profile; `render.py` encodes with it and transparently falls back to `libx264` on any failure; NVENC-verified on Windows, x264 parity preserved ✓ (41156e2; NVENC 1.36× on 60s clip; 53 tests)
-- [ ] **Phase 14: Windows GPU Enablement + Benchmark Harness** - `setup.ps1` vendors the pinned NVENC-capable ffmpeg 7.1 + CUDA cuBLAS whisper (BLAS fallback); transcribe uses the RTX GPU with CPU fallback; benchmark harness records CPU-vs-GPU deltas + ffprobe validation
-- [ ] **Phase 15: macOS Tuning (VideoToolbox + Metal defaults)** - VideoToolbox encode profile + Metal whisper defaults + `setup.sh`/README, relying on the Phase 13 probe + fallback so the untestable Mac path cannot break
+- [x] **Phase 14: Windows GPU Enablement + Benchmark Harness** - `setup.ps1` pins NVENC-capable ffmpeg 7.1; benchmark harness records CPU-vs-GPU deltas + ffprobe validation. ⚠ CUDA whisper DROPPED (data-driven): prebuilt cuBLAS 12.4 is ~40× slower than CPU on Blackwell — Windows transcribe stays fast CPU BLAS (ACCEL-02/SAFE-02 deferred, see BENCHMARKS.md) ✓ (e81618b)
+- [x] **Phase 15: macOS Tuning (VideoToolbox + Metal defaults)** - VideoToolbox encode profile in `hwaccel` + Metal whisper + `setup.sh` note; probe + fallback unit-tested with a stubbed Mac (selects videotoolbox on darwin, falls back to x264 if absent) so the untestable Mac path cannot break ✓
 - [ ] **Phase 16: Branch Split + READMEs + Push** - Fork `windows-optimized` and `mac-optimized` off the shared core (differing only in defaults/setup/README), each with a dead-simple quickstart; push both to GitHub
 
 ### Phase 13: Shared Hardware-Accel Core + Render Encoder Fallback
