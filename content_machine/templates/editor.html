@@ -40,6 +40,7 @@
   .cropbox .tag{position:absolute;top:5px;left:5px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;line-height:1.4}
   .outframe{position:relative;overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);width:100%}
   .outframe video{position:absolute;will-change:left,top,width,height}
+  .outframe canvas{display:block;width:100%;height:100%}
   .outframe .rt{position:absolute;top:8px;right:8px;z-index:2;background:rgba(10,12,16,.8);color:var(--accent2);
     font:700 11px ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
   .aspects{display:flex;gap:7px;margin:0 0 12px}
@@ -112,13 +113,23 @@ function computeCrop(sw,sh,aspect,xoff,zoom,yoff){
   x=Math.max(0,Math.min(sx,x)); y=Math.max(0,Math.min(sy,y)); cw-=cw%2; ch-=ch%2;
   return {x,y,w:cw,h:ch,sx,sy};
 }
-function layoutOut(frame,vid,aspect,t){
-  if(!sw||!sh)return; const [tw,th]=aspect.split(":").map(Number); const CAP=420;
+/* Draw the cropped region of the single source video onto the output canvas so
+   the preview plays in sync with the source (no freezing on frame 0). */
+function drawOut(frame,cv,video,aspect,t){
+  const [tw,th]=aspect.split(":").map(Number); const CAP=420;
   let fw=frame.clientWidth||0; if(!fw)return; let fh=fw*th/tw;
   if(fh>CAP){fh=CAP; fw=Math.round(CAP*tw/th); frame.style.width=fw+'px';} else {frame.style.width='';}
-  frame.style.height=Math.round(fh)+'px';
-  const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y); const s=fw/c.w;
-  vid.style.width=(sw*s)+'px'; vid.style.height=(sh*s)+'px'; vid.style.left=(-c.x*s)+'px'; vid.style.top=(-c.y*s)+'px';
+  fh=Math.round(fh); frame.style.height=fh+'px';
+  if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
+  const ctx=cv.getContext('2d'); const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
+  if(!vw||!vh){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); return; }
+  const c=computeCrop(vw,vh,aspect,t.x,t.zoom,t.y);
+  try{ ctx.drawImage(video, c.x,c.y,c.w,c.h, 0,0, cv.width, cv.height); }
+  catch(e){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); }
+}
+function startOutLoop(frame,cv,video,getAspect,getTF){
+  function loop(){ if(!cv.isConnected) return; drawOut(frame,cv,video,getAspect(),getTF()); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
 }
 function fmt(t){ t=Math.max(0,t); const m=Math.floor(t/60), s=(t%60); return m+':'+s.toFixed(2).padStart(5,'0'); }
 function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.round(-v*100)+'%':Math.round(v*100)+'% →'); }
@@ -140,7 +151,7 @@ function buildUI(){
                <div class="cropbox" id="box"><span class="tag" id="tag">9:16</span></div></div></div>
            <div><p class="cap">Output preview</p>
              <div class="outframe" id="of"><span class="rt" id="rt">9:16</span>
-               <video id="outvid" src="${D.source_url}?p=edit" muted playsinline preload="metadata"></video></div></div>
+               <canvas id="outcv"></canvas></div></div>
          </div>
          <div class="sliderrow"><span>Zoom</span><input type="range" id="zoom" min="1" max="3" step="0.05"><span class="val" id="zv">1.00×</span></div>
          <div class="sliderrow"><span>Position X</span><input type="range" id="ox" min="-1" max="1" step="0.02"><span class="val" id="xv">center</span></div>
@@ -194,13 +205,13 @@ function wire(){
     $('asps').innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${a===aspect?'active':''}" data-a="${a}">${a}${dirtyAspects.has(a)?'<span class="dirty">●</span>':''}</span>`).join('');
     $('asps').querySelectorAll('.asp').forEach(el=>el.addEventListener('click',()=>{ aspect=el.dataset.a; sync(); redraw(); renderTabs(); }));
   }
-  const srcvid=$('srcvid'), outvid=$('outvid');
+  const srcvid=$('srcvid'), outcv=$('outcv');
   function sync(){ const t=TF[aspect]; $('zoom').value=t.zoom; $('ox').value=t.x; $('oy').value=t.y; }
   function redraw(){
     const t=TF[aspect]; const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
     const box=$('box'); if(sw&&sh){ box.style.display='block'; box.style.left=(c.x/sw*100)+'%'; box.style.width=(c.w/sw*100)+'%';
       box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%'; } $('tag').textContent=aspect;
-    layoutOut($('of'),outvid,aspect,t); $('rt').textContent=aspect;
+    drawOut($('of'),outcv,srcvid,aspect,t); $('rt').textContent=aspect;
     $('zv').textContent=(+t.zoom).toFixed(2)+'×'; $('xv').textContent=offLabel(t.x); $('yv').textContent=yLabel(t.y);
     $('ox').disabled=!(c.sx>1); $('oy').disabled=!(c.sy>1);
   }
@@ -210,7 +221,8 @@ function wire(){
   }));
   $('copyall').addEventListener('click',()=>{ const t=TF[aspect]; ASPECTS.forEach(a=>{TF[a]={zoom:t.zoom,x:t.x,y:t.y}; dirtyAspects.add(a);}); redraw(); renderTabs(); markDirty(); });
   $('resetf').addEventListener('click',()=>{ TF[aspect]={zoom:1,x:0,y:0}; dirtyAspects.add(aspect); sync(); redraw(); renderTabs(); markDirty(); });
-  srcvid.addEventListener('loadedmetadata',redraw); outvid.addEventListener('loadedmetadata',redraw);
+  srcvid.addEventListener('loadedmetadata',()=>{ try{ srcvid.currentTime=Math.max(0.05,trimIn); }catch(e){} redraw(); });
+  startOutLoop($('of'),outcv,srcvid,()=>aspect,()=>TF[aspect]);
   window.addEventListener('resize',redraw);
 
   /* ---- trim ---- */

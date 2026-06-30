@@ -52,6 +52,7 @@
   .panelcap{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 7px;display:flex;gap:8px;align-items:center}
   .outframe{position:relative;overflow:hidden;border-radius:12px;background:#000;border:1px solid var(--line);width:100%}
   .outframe video{position:absolute;will-change:left,top,width,height}
+  .outframe canvas{display:block;width:100%;height:100%}
   .outframe .ratiotag{position:absolute;top:8px;right:8px;z-index:2;background:rgba(10,12,16,.8);color:var(--accent2);
     font:700 11px ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
   .reset{font-size:11.5px;font-weight:600;background:transparent;color:var(--mut);border:1px solid var(--line);
@@ -171,22 +172,37 @@ function drawBox(box,tag,sw,sh,aspect,xoff,zoom,yoff){
   box.style.top=(c.y/sh*100)+'%'; box.style.height=(c.h/sh*100)+'%';
   if(tag) tag.textContent=aspect;
 }
-/* Live WYSIWYG: position a video inside an output-aspect frame so it shows the
-   exact cropped/zoomed/panned result. crop aspect == output aspect, so the crop
-   region fills the frame precisely. */
-function layoutOut(frame,vid,sw,sh,aspect,tf){
-  if(!sw||!sh){return;}
+/* Live WYSIWYG: draw the cropped/zoomed/panned region of the (single) source
+   video onto a canvas every frame, so the output preview plays in sync with the
+   source instead of freezing on frame 0. crop aspect == output aspect, so the
+   crop region maps exactly onto the output frame. */
+function drawOut(frame,cv,video,sw,sh,aspect,tf,maxH){
   const [tw,th]=aspect.split(":").map(Number);
-  const CAP=560;                        // cap height so tall 9:16 isn't enormous
+  const CAP=maxH||560;                  // cap height so tall 9:16 isn't enormous
   let fw=frame.clientWidth||0; if(!fw) return;
   let fh=fw*th/tw;
   if(fh>CAP){ fh=CAP; fw=Math.round(CAP*tw/th); frame.style.width=fw+'px'; }
   else { frame.style.width=''; }
-  frame.style.height=Math.round(fh)+'px';
-  const c=computeCrop(sw,sh,aspect,tf.x,tf.zoom,tf.y);
-  const s=fw/c.w;                       // scale so crop width fills the frame
-  vid.style.width=(sw*s)+'px'; vid.style.height=(sh*s)+'px';
-  vid.style.left=(-c.x*s)+'px'; vid.style.top=(-c.y*s)+'px';
+  fh=Math.round(fh); frame.style.height=fh+'px';
+  if(cv.width!==fw) cv.width=fw; if(cv.height!==fh) cv.height=fh;
+  const ctx=cv.getContext('2d');
+  const vw=video.videoWidth||sw, vh=video.videoHeight||sh;
+  if(!vw||!vh){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); return; }
+  const c=computeCrop(vw,vh,aspect,tf.x,tf.zoom,tf.y);
+  try{ ctx.drawImage(video, c.x,c.y,c.w,c.h, 0,0, cv.width, cv.height); }
+  catch(e){ ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); }
+}
+/* Drive a canvas output preview from a source <video> with a self-stopping RAF
+   loop (stops when the canvas leaves the DOM). Nudges a first frame to decode so
+   it's never blank, and follows play/seek live. */
+function startOutLoop(frame,cv,video,getAspect,getTF,maxH){
+  video.addEventListener('loadedmetadata',()=>{ try{ if(video.currentTime<0.02) video.currentTime=0.05; }catch(e){} },{once:true});
+  function loop(){
+    if(!cv.isConnected) return;          // preview/editor re-rendered -> stop
+    drawOut(frame,cv,video,video.videoWidth,video.videoHeight,getAspect(),getTF(),maxH);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 }
 function widthLimited(sw,sh,aspect){ const [tw,th]=aspect.split(":").map(Number); return (tw/th)<=(sw/sh); }
 function offLabel(v){ v=parseFloat(v); return v===0?'center':(v<0?'← '+Math.round(-v*100)+'%':Math.round(v*100)+'% →'); }
@@ -213,9 +229,9 @@ function buildPreview(d){
            <div class="cropbox" id="pbox"><span class="tag" id="ptag">9:16</span></div></div>
        </div>
        <div>
-         <p class="panelcap">Live output preview</p>
+         <p class="panelcap">Live output preview <span style="color:var(--mut);font-weight:400;text-transform:none;letter-spacing:0">— plays with the source</span></p>
          <div class="outframe" id="poutframe"><span class="ratiotag" id="pouttag">9:16</span>
-           <video id="poutvid" src="${d.source_url}?p=out" muted playsinline preload="metadata"></video></div>
+           <canvas id="poutcv"></canvas></div>
        </div>
      </div>
      <div class="sliderrow"><span>Zoom</span>
@@ -246,7 +262,8 @@ function buildPreview(d){
         offy=document.getElementById('poffy'),yval=document.getElementById('pyval'),
         zoom=document.getElementById('pzoom'),zval=document.getElementById('pzval'),
         hint=document.getElementById('phint'),
-        outframe=document.getElementById('poutframe'),outvid=document.getElementById('poutvid'),
+        pvid=document.getElementById('pvid'),
+        outframe=document.getElementById('poutframe'),outcv=document.getElementById('poutcv'),
         outtag=document.getElementById('pouttag');
   function syncControls(){ const t=TF[aspect]; zoom.value=t.zoom; off.value=t.x; offy.value=t.y; }
   function redraw(){
@@ -254,16 +271,16 @@ function buildPreview(d){
     t.zoom=parseFloat(zoom.value); t.x=parseFloat(off.value); t.y=parseFloat(offy.value);
     const c=computeCrop(sw,sh,aspect,t.x,t.zoom,t.y);
     drawBox(box,tag,sw,sh,aspect,t.x,t.zoom,t.y);
-    layoutOut(outframe,outvid,sw,sh,aspect,t); outtag.textContent=aspect;
+    drawOut(outframe,outcv,pvid,sw,sh,aspect,t); outtag.textContent=aspect;
     zval.textContent=t.zoom.toFixed(2)+'×'; val.textContent=offLabel(t.x); yval.textContent=yLabel(t.y);
     off.disabled = !(c.sx>1); offy.disabled = !(c.sy>1);   // disable an axis with no slack
     hint.textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${aspect}.`
                           : 'Could not read video size — framing still applies.';
   }
-  document.getElementById('pvid').addEventListener('loadedmetadata',redraw);
-  outvid.addEventListener('loadedmetadata',redraw);
+  pvid.addEventListener('loadedmetadata',redraw);
   [zoom,off,offy].forEach(el=>el.addEventListener('input',redraw));
-  window.addEventListener('resize',()=>layoutOut(outframe,outvid,sw,sh,aspect,TF[aspect]));
+  startOutLoop(outframe,outcv,pvid,()=>aspect,()=>TF[aspect]);
+  window.addEventListener('resize',redraw);
   document.querySelectorAll('#pasps .asp').forEach(el=>el.addEventListener('click',()=>{
     document.querySelectorAll('#pasps .asp').forEach(x=>x.classList.remove('active'));
     el.classList.add('active'); aspect=el.dataset.a; syncControls(); redraw(); }));

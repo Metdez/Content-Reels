@@ -56,6 +56,15 @@ def test_safe_upload_name_blocks_traversal_and_bad_ext(monkeypatch, tmp_path):
             appmod.safe_upload_name(bad)
 
 
+def test_new_job_id_unique_per_upload(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    from content_machine import app
+    cid = "abcdef1234567890"
+    a, b = app.new_job_id(cid), app.new_job_id(cid)
+    assert a != b                                   # same file -> distinct runs
+    assert a.startswith("abcdef1234") and len(a) == 16
+
+
 def test_parse_transforms_filters_and_defaults(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     from content_machine import app

@@ -33,6 +33,13 @@ UPLOADS.mkdir(parents=True, exist_ok=True)
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"}
 
 
+def new_job_id(content_id: str) -> str:
+    """A unique job id per upload: content-hash prefix (for grouping) + a nonce,
+    so re-uploading the same file is a fresh run, not the previous one."""
+    import uuid
+    return f"{content_id[:10]}{uuid.uuid4().hex[:6]}"
+
+
 def safe_upload_name(filename: str) -> str:
     """Basename-only, dotfile-free, video-extension filename. Raises ValueError otherwise."""
     name = Path(filename or "").name
@@ -219,18 +226,20 @@ async def upload(video: UploadFile = File(...)):
     tmp = UPLOADS / safe_name
     with open(tmp, "wb") as f:
         shutil.copyfileobj(video.file, f)
-    job_id = compute_job_id(tmp)
+    # Each upload is its OWN run, even for an identical file: the job id is the
+    # content hash plus a per-upload nonce. (A pure content-hash id made a
+    # re-upload land back on the previous completed run and cache-skip every
+    # stage — the user wants a fresh run each time they upload.)
+    import os as _os
+    content_id = compute_job_id(tmp)
+    job_id = new_job_id(content_id)
     ext = Path(safe_name).suffix
     job = Job(job_id=job_id, source_name=safe_name, data_dir=config.DATA_DIR / job_id)
     job.ensure_dirs()
     src = job.source_path(ext)
-    # Move (not copy) the staged upload into the job dir so we don't keep two
-    # copies of a multi-GB video; os.replace is atomic on the same volume.
-    import os as _os
-    if src.exists():
-        tmp.unlink(missing_ok=True)
-    else:
-        _os.replace(tmp, src)
+    # Move (not copy) the staged upload into the (brand-new) job dir; os.replace
+    # is atomic on the same volume.
+    _os.replace(tmp, src)
     try:
         w, h = render.probe_dims(src)
     except Exception as e:  # non-fatal — preview overlay just won't draw
@@ -242,6 +251,7 @@ async def upload(video: UploadFile = File(...)):
     manifest["awaiting_run"] = True
     manifest["source_ext"] = ext
     manifest["source_dims"] = [w, h]
+    manifest["content_id"] = content_id  # source identity, for reference/grouping
     job.update_stage("ingest", "done", source=str(src))  # source already on disk
     job.save_manifest(manifest)
     return RedirectResponse(f"/job/{job_id}", status_code=303)
