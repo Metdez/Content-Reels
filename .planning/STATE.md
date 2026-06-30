@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v4
-milestone_name: — Cross-Platform Hardware Acceleration
-status: complete
-last_updated: "2026-06-30T09:33:54.078Z"
+milestone: v5
+milestone_name: — Editing UX Revamp
+status: planning
+last_updated: "2026-06-30T12:40:07.694Z"
 last_activity: 2026-06-30
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 16 of 16 complete — milestone v4 delivered
+Phase: Not started (defining requirements)
 Plan: —
-Status: All 4 v4 phases (13–16) built + verified live on Windows (NVENC render, real ffprobe, benchmark). 55 tests pass. windows-optimized + mac-optimized pushed to GitHub.
-Last activity: 2026-06-30 — commits 41156e2 (P13), e81618b (P14), 5405af0 (P15), 5280b0a/540b582 (P16 branches)
+Status: Defining requirements
+Last activity: 2026-06-30 — Milestone v5 started
 
 ### Verified live (v4, Windows 11, RTX 5060 + real binaries + ffprobe)
 

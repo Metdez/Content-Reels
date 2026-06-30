@@ -113,6 +113,26 @@ Active milestone — Cross-Platform Hardware Acceleration (GPU encode + GPU tran
 - [ ] **PLAT-03**: `windows-optimized` and `mac-optimized` branches exist off the shared auto-detecting core (differing only in defaults/setup/README) and are pushed to GitHub
 - [ ] **PLAT-04**: Each platform branch ships a dead-simple README: one-command setup and one-command run for that platform
 
+## v5 Requirements
+
+Active milestone — Editing UX Revamp (background re-render + live progress, direct-manipulation framing + magnifier, flow polish). Phases 17–19.
+
+### Responsive Re-render
+
+- [ ] **EDITUX-01**: When the user clicks "Apply & re-render" in the clip editor, the re-render runs in the background and the page stays fully interactive (no frozen request, no disabled-everything spinner) — the user can scrub, switch aspects, and adjust framing while it runs
+- [ ] **EDITUX-02**: The editor shows a live progress indicator while a re-render runs — overall plus per-aspect state (queued / rendering / done / error) — driven by the render progress already written to `job.json`
+- [ ] **EDITUX-03**: Each re-rendered aspect's preview/thumbnail updates in place the moment that ratio finishes, not only when all ratios are done
+- [ ] **EDITUX-04**: If the user changes framing/trim/captions again while a render is in flight, the new render is queued and runs after the current one — no lost edits, never blocked
+
+### Direct-Manipulation Framing
+
+- [ ] **EDITUX-05**: The user can zoom the crop framing with the scroll-wheel and pan it by dragging, directly on each aspect's live preview; the result mirrors `render.compute_crop` exactly (pixel-parity) and the existing sliders stay as a fallback
+- [ ] **EDITUX-06**: The user can magnify the preview canvas itself (an inspect zoom) to see fine detail while framing, without changing the clip's output framing
+
+### Flow Clarity
+
+- [ ] **EDITUX-07**: The edit→crop flow has clear, always-visible states (idle / unsaved changes / rendering / done / error) so the user is never left guessing whether a render is still running, and errors surface a readable message instead of a silent hang
+
 ## Out of Scope
 
 Explicitly excluded. Documented to prevent scope creep.
@@ -209,6 +229,23 @@ Explicitly excluded. Documented to prevent scope creep.
 - Delivered: 10 Done · 2 Deferred (ACCEL-02/SAFE-02 — CUDA whisper not viable on Blackwell, see BENCHMARKS.md)
 - Unmapped: 0 ✓
 
+### v5 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| EDITUX-01 | Phase 17 | Pending |
+| EDITUX-02 | Phase 17 | Pending |
+| EDITUX-03 | Phase 17 | Pending |
+| EDITUX-04 | Phase 17 | Pending |
+| EDITUX-05 | Phase 18 | Pending |
+| EDITUX-06 | Phase 18 | Pending |
+| EDITUX-07 | Phase 19 | Pending |
+
+**v5 Coverage:**
+- v5 requirements: 7 total
+- Mapped to phases: 7 (Phase 17: 4 · Phase 18: 2 · Phase 19: 1)
+- Unmapped: 0 ✓
+
 ---
 *Requirements defined: 2026-06-29*
-*Last updated: 2026-06-30 — v4 requirements added (12 reqs, ACCEL/SAFE/BENCH/PLAT → Phases 13–16)*
+*Last updated: 2026-06-30 — v5 requirements added (7 reqs, EDITUX → Phases 17–19)*

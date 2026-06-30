@@ -8,18 +8,19 @@ A local-first webapp that turns a long video (talk, webinar, podcast) into short
 
 Drop in one video and get back several genuinely good, caption-burned clips in multiple aspect ratios — without uploading the source anywhere or paying per-token API costs.
 
-## Current Milestone: v4 — Cross-Platform Hardware Acceleration
+## Current Milestone: v5 — Editing UX Revamp
 
-**Goal:** Make the two slow stages fast by putting the idle GPU to work — offload video encode to the GPU (NVENC on Windows / VideoToolbox on Mac) and transcription to the GPU (CUDA whisper on Windows; Mac is already Metal) — behind a runtime-probe + automatic CPU fallback so it is structurally impossible to break, shipped as two thin platform-tuned branches off one shared auto-detecting core.
+**Goal:** Make the clip editor feel responsive and legible — a clip re-render runs in the background with a live per-aspect progress bar (never a frozen page), framing is set by direct manipulation (scroll-to-zoom + drag-to-pan) on each aspect's live preview plus a magnifier to inspect detail, and the whole edit→crop flow has clear states so the user is never left wondering "is it still rendering?"
 
 **Target features:**
-- `hwaccel.py`: probe each candidate encoder once at startup, cache the verdict, return the best encoder profile (nvenc / videotoolbox / x264) with quality-matched flags; encode-only (CPU decode + CPU filters), aspect ratios encoded serially.
-- Encoder fallback wired into `render.py`: every GPU encode transparently re-runs on `libx264` on any failure — an output file is never missing or corrupt; the "always has audio" + faststart guarantees hold.
-- GPU transcription: Windows vendors the prebuilt CUDA (cuBLAS) whisper build with auto-fallback to the CPU BLAS build; Mac stays Metal.
-- Benchmark/eval harness: measures CPU-vs-GPU wall-time for render and transcribe and validates every output with ffprobe; records before/after numbers proving the speedup and the fallback's validity.
-- Two thin platform branches (`windows-optimized`, `mac-optimized`) differing only in defaults/setup/README, each with a dead-simple one-command quickstart; pushed to GitHub.
+- Background re-render: the editor's "Apply & re-render" spawns the render on a background thread (like the main pipeline) and returns immediately; the page stays fully interactive while it runs.
+- Live editor progress: a per-aspect progress bar in the editor (queued / rendering / done / error), driven by the existing `job.update_stage`/`set_progress` writes into `job.json`, polled by the editor; thumbnails swap in as each ratio finishes.
+- Edit queue: changing framing/trim again while a render runs queues the next render instead of blocking or losing work.
+- Direct-manipulation framing: scroll-wheel zooms the crop and dragging pans, directly on each aspect preview (mirrors `render.compute_crop`); sliders kept as a fallback; copy-to-all + reset preserved; pixel-parity with the renderer.
+- Preview magnifier: zoom the preview canvas itself to inspect detail without changing the output framing.
+- Flow polish: clear idle/dirty/rendering/done/error states across the edit→crop flow, verified live in the browser.
 
-**Key context:** "Must not break" outranks raw speed. Verified live on the author's machine: the bundled bleeding-edge BtbN master ffmpeg fails NVENC on driver 591.74 (needs ≥610); pinning BtbN ffmpeg 7.1 makes NVENC work with no driver change. Encode-only (no `-hwaccel` decode) and serial GPU sessions are deliberate safety choices. The untestable Mac branch inherits the tested probe+fallback, so worst case it runs CPU exactly like today.
+**Key context:** "Must not break" still outranks speed; local-only; do not merge to main without asking; test live in the browser (Playwright on EnlayeParis.mp4) + ffprobe + pytest each phase. Root cause of the reported pain: `save_clip_edit` (app.py) calls `render.rerender_one` **synchronously**, so the HTTP request blocks until all 3 ratios finish — the page freezes with no feedback even though `rerender_one` already writes render progress nobody polls. The two crop-math definitions (JS `computeCrop` in editor.html and Python `render.compute_crop`) must stay in lockstep — divergence is the recurring risk, gated by the pixel-parity criterion.
 
 ## Requirements
 
@@ -78,6 +79,9 @@ Drop in one video and get back several genuinely good, caption-burned clips in m
 | v4 GPU accel = encode-only offload (NVENC/VideoToolbox) + GPU whisper, behind a startup probe with automatic libx264/CPU fallback | "Must not break" > speed; mixing hw-decode with sw-filters breaks the filtergraph; a probe+fallback makes a missing GPU/driver a non-event | ✓ Resolved (verified on Windows) |
 | v4 Windows ffmpeg pinned to BtbN 7.1 (not master) | Master ffmpeg needs NVENC driver ≥610; author's driver is 591.74 — 7.1 NVENC verified working on it, no driver gamble | ✓ Resolved (verified live) |
 | v4 ships two thin platform branches off one shared auto-detecting core (not divergent codebases) | The Mac branch can't be tested here; a shared probe+fallback core means worst case = CPU like today, so it can't break | ✓ Resolved |
+| v5 editor re-render runs on a background thread + editor polls `job.json` render progress (reuse the P11 progress mechanism), instead of the synchronous blocking call | Synchronous `rerender_one` froze the editor with no feedback; a background thread + polling makes it non-blockable and legible without new infra | — Pending |
+| v5 framing = direct manipulation (scroll-zoom + drag-pan) on the live preview, keeping sliders as fallback, with one shared crop-math definition | Sliders are fiddly; direct manipulation is the expected video-editor UX. JS↔Python crop-math divergence is the risk — gated by pixel-parity | — Pending |
+| v5 edit re-renders queue (single in-flight, next change runs after) rather than running concurrently | "Must not break" → one render at a time avoids clobbering partial outputs / racing the manifest; the user never loses an edit | — Pending |
 
 ## Evolution
 
@@ -97,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-30 — milestone v4 started (cross-platform hardware acceleration: GPU encode + GPU transcribe with probe+fallback)*
+*Last updated: 2026-06-30 — milestone v5 started (editing UX revamp: background re-render + live progress, direct-manipulation framing + magnifier, edit-flow polish)*

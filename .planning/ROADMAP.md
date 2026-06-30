@@ -380,6 +380,62 @@ All 15 v3 requirements mapped to exactly one phase. No orphans, no duplicates.
 - **Phase 11 (v3):** whisper-cli stderr progress-format parsing is the one unknown — a quick spike, not a full research phase.
 - **Phase 12 (v3):** the per-aspect dirty-tracking / "only changed aspects re-encode" design is the load-bearing unknown — worth a short `--research-phase` or spike on the `edit.json` schema before planning.
 
+## v5 Phases — Editing UX Revamp (Phases 17–19)
+
+Continues numbering after v4 (Phases 13–16). Sequential; 17 → 18 → 19.
+
+### Phase 17 — Background Re-render + Live Editor Progress
+
+**Goal:** A clip re-render runs in the background; the editor stays interactive and shows live per-aspect progress; edits made mid-render queue.
+
+**Requirements:** EDITUX-01, EDITUX-02, EDITUX-03, EDITUX-04
+
+**Success criteria:**
+1. Clicking "Apply & re-render" returns immediately; the page is interactive (scrub, switch aspects, adjust framing) while ffmpeg runs in the background.
+2. The editor shows an overall + per-aspect progress indicator (queued / rendering / done / error) sourced from `job.json` render progress.
+3. Each aspect's preview/thumbnail refreshes the instant that ratio finishes; a Playwright run on EnlayeParis.mp4 captures the mid-render interactive + per-aspect-update states.
+4. Changing framing/trim again while a render is in flight queues a second render that runs after the first; both complete and `edit.json` reflects the final state.
+
+**Research flag:** Reuse the P11 progress mechanism (`update_stage`/`set_progress` on `job.json`) — but the editor needs to distinguish *this clip's* re-render from a whole-job render; key the progress per-clip so concurrent reads don't cross-talk. Worth a quick design check before coding.
+
+### Phase 18 — Direct-Manipulation Framing + Preview Magnifier
+
+**Goal:** Set framing by scroll-zoom + drag-pan directly on each aspect's live preview, with a magnifier to inspect detail — pixel-accurate to the renderer.
+
+**Requirements:** EDITUX-05, EDITUX-06
+
+**Success criteria:**
+1. Scroll-wheel over an aspect preview zooms its crop; dragging pans it; values stay clamped to valid `{zoom, x, y}` and update the sliders (kept as fallback).
+2. The drawn crop matches `render.compute_crop` for the same transform (pixel-parity verified, as in v3) — a re-rendered output frames identically to the preview.
+3. A magnifier control enlarges the preview canvas for inspection without altering `{zoom, x, y}` or the output; copy-to-all and reset still work.
+
+**Research flag:** None — this is the proven CSS/canvas-over-shared-crop-math pattern from v3; the only risk is JS↔Python divergence, gated by pixel-parity.
+
+### Phase 19 — Edit-Flow Polish + Live Verification
+
+**Goal:** The whole edit→crop flow has clear, always-visible states and is verified end-to-end in the browser.
+
+**Requirements:** EDITUX-07
+
+**Success criteria:**
+1. The editor always shows an unambiguous state (idle / unsaved changes / rendering / done / error); a render failure surfaces a readable message, not a silent hang.
+2. Full Playwright walkthrough on EnlayeParis.mp4 (open editor → reframe by drag/scroll → trim → apply → watch progress → confirm updated outputs) passes; ffprobe validates the re-rendered clips; pytest is green.
+
+**Research flag:** None — integration/polish phase.
+
+## v5 Coverage
+
+All 7 v5 requirements mapped to exactly one phase. No orphans, no duplicates.
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| 17. Background Re-render + Live Progress | EDITUX-01, EDITUX-02, EDITUX-03, EDITUX-04 | 4 |
+| 18. Direct-Manipulation Framing + Magnifier | EDITUX-05, EDITUX-06 | 2 |
+| 19. Edit-Flow Polish + Verification | EDITUX-07 | 1 |
+
+**Total: 7/7 mapped ✓**
+
 ---
 *Roadmap created: 2026-06-29 — granularity: coarse, 4 phases, sequential numbering*
 *Updated: 2026-06-30 — v3 milestone appended (Phases 9–12: per-aspect zoom/crop + clip editor + progress bars); 15/15 v3 requirements mapped*
+*Updated: 2026-06-30 — v5 milestone appended (Phases 17–19: background re-render + live progress, direct-manipulation framing + magnifier, flow polish); 7/7 v5 requirements mapped*
