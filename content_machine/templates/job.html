@@ -116,8 +116,20 @@
   /* Modal */
   .modal{position:fixed;inset:0;background:rgba(4,6,10,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
   .modal.open{display:flex}
-  .modal .inner{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:560px;width:100%;box-shadow:var(--shadow)}
+  .modal .inner{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:760px;width:100%;
+    max-height:92vh;overflow:auto;box-shadow:var(--shadow)}
   .modal h2{margin-bottom:2px} .modal .x{float:right;cursor:pointer;color:var(--mut);font-size:20px;line-height:1}
+  /* quick-crop re-render progress */
+  .rasps{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .rasp{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border:1px solid var(--line);
+    border-radius:9px;background:#0c111a;font-size:13px}
+  .rasp .lab{display:flex;align-items:center;gap:8px} .rasp .st{font-size:12.5px;color:var(--mut)}
+  .rasp.rendering .dot{background:var(--warn);animation:pulse 1s infinite} .rasp.rendering .st{color:var(--warn)}
+  .rasp.queued .dot{background:var(--mut);animation:pulse 1.6s infinite}
+  .rasp.done .dot{background:var(--ok)} .rasp.done .st{color:var(--ok)}
+  .rasp.error .dot{background:var(--err)} .rasp.error .st{color:var(--err)}
+  .modal pre#mlog{margin:0;padding:12px 14px;max-height:190px;overflow:auto;
+    font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d4e3;white-space:pre-wrap;background:#0a0d12}
 </style>
 </head>
 <body>
@@ -126,21 +138,50 @@
   <div class="banner" id="boot">Loading…</div>
 </main>
 
-<!-- Reframe modal -->
+<!-- Quick-crop modal -->
 <div class="modal" id="modal"><div class="inner">
   <span class="x" onclick="closeModal()">✕</span>
-  <h2>Adjust crop</h2>
-  <p class="lead" id="mlead">Move the crop window, then re-render this clip.</p>
-  <div class="cropwrap" id="mwrap"><video id="mvid" muted playsinline preload="metadata"></video>
-    <div class="cropbox" id="mbox"><span class="tag" id="mtag">9:16</span></div></div>
+  <h2>Quick crop</h2>
+  <p class="lead" id="mlead">Pick a ratio, set its zoom &amp; position, then re-render. Each ratio keeps its own framing.</p>
   <div class="aspects" id="masps"></div>
-  <div class="sliderrow"><span>Crop&nbsp;X</span>
+  <div class="previewgrid">
+    <div>
+      <p class="panelcap">Source — highlighted area is kept</p>
+      <div class="cropwrap" id="mwrap"><video id="mvid" muted playsinline preload="metadata"></video>
+        <div class="cropbox" id="mbox"><span class="tag" id="mtag">9:16</span></div></div>
+    </div>
+    <div>
+      <p class="panelcap">Live output preview <span style="color:var(--mut);font-weight:400;text-transform:none;letter-spacing:0">— exact crop</span></p>
+      <div class="outframe" id="moutframe"><span class="ratiotag" id="mouttag">9:16</span>
+        <canvas id="moutcv"></canvas></div>
+    </div>
+  </div>
+  <div class="sliderrow"><span>Zoom</span>
+    <input type="range" id="mzoom" min="1" max="3" step="0.05" value="1">
+    <span class="val" id="mzval">1.00×</span></div>
+  <div class="sliderrow"><span>Position&nbsp;X</span>
     <input type="range" id="moff" min="-1" max="1" step="0.02" value="0">
     <span class="val" id="mval">center</span></div>
+  <div class="sliderrow"><span>Position&nbsp;Y</span>
+    <input type="range" id="moffy" min="-1" max="1" step="0.02" value="0">
+    <span class="val" id="myval">center</span></div>
   <div class="hint" id="mhint"></div>
+  <button class="copyall" id="mcopy">⧉ Copy this framing to all ratios</button>
+
+  <!-- progress + log: revealed on re-render -->
+  <div id="mprog" style="display:none">
+    <div class="master" id="mmaster" style="margin:18px 0 12px">
+      <div class="lbl"><span id="mproglbl">Rendering…</span><span class="pct" id="mprogpct">0%</span></div>
+      <div class="barwrap"><div class="fill" id="mprogfill"></div></div>
+    </div>
+    <div class="rasps" id="mrasps"></div>
+    <details class="logs" id="mlogwrap" open style="margin:12px 0 0">
+      <summary>📜 Live log</summary><pre id="mlog">waiting for render output…</pre></details>
+  </div>
+
   <div style="display:flex;gap:10px;margin-top:18px">
     <button id="mgo">Re-render clip</button>
-    <button class="ghost" onclick="closeModal()">Cancel</button>
+    <button class="ghost" onclick="closeModal()">Close</button>
   </div>
 </div></div>
 
@@ -394,46 +435,115 @@ document.addEventListener('click',e=>{
   }
 });
 
-/* ---------- reframe modal ---------- */
-let MCLIP=null, maspect="9:16";
-function openModal(idx){
-  const c=DATA.clips.find(c=>c.index===idx); if(!c) return; MCLIP=c; maspect="9:16";
-  const [sw,sh]=DATA.source_dims||[0,0];
-  const masps=document.getElementById('masps');
+/* ---------- quick-crop modal ----------
+   Full per-aspect framing (zoom + x/y) with a live output preview, then a
+   NON-BLOCKING re-render via the shared /edit + /rerender-status pipeline (same
+   as the full editor) so the user sees a progress bar, per-aspect status, and a
+   live log instead of a frozen "Re-rendering…" button. */
+const $=id=>document.getElementById(id);
+let MCLIP=null, maspect="9:16", MTF=newTF(), mRTimer=null, mLogTimer=null, mRKey='';
+function msync(){ const t=MTF[maspect]; $('mzoom').value=t.zoom; $('moff').value=t.x; $('moffy').value=t.y; }
+function mredraw(){
+  const [sw,sh]=DATA.source_dims||[0,0]; const t=MTF[maspect];
+  t.zoom=parseFloat($('mzoom').value); t.x=parseFloat($('moff').value); t.y=parseFloat($('moffy').value);
+  const c=computeCrop(sw,sh,maspect,t.x,t.zoom,t.y);
+  drawBox($('mbox'),$('mtag'),sw,sh,maspect,t.x,t.zoom,t.y); $('mouttag').textContent=maspect;
+  $('mzval').textContent=t.zoom.toFixed(2)+'×'; $('mval').textContent=offLabel(t.x); $('myval').textContent=yLabel(t.y);
+  $('moff').disabled=!(c.sx>1); $('moffy').disabled=!(c.sy>1);   // disable an axis with no slack
+  $('mhint').textContent = sw ? `Source ${sw}×${sh} · keeping ${c.w}×${c.h}px for ${maspect}.`
+                              : 'Could not read video size — framing still applies.';
+}
+async function openModal(idx){
+  const c=DATA.clips.find(c=>c.index===idx); if(!c) return;
+  MCLIP=c; maspect="9:16"; MTF=newTF(); mRKey='';
+  // seed from any saved framing so quick-crop and the full editor stay in sync
+  try{ const r=await fetch(`/api/job/${JOB}/clip/${idx}`);
+       if(r.ok){ const d=await r.json(); const tf=d.transforms||{};
+         ASPECTS.forEach(a=>{ if(tf[a]) MTF[a]={zoom:+tf[a].zoom||1,x:+tf[a].x||0,y:+tf[a].y||0}; }); } }catch(e){}
+  const masps=$('masps');
   masps.innerHTML=ASPECTS.map((a,i)=>`<span class="asp ${i===0?'active':''}" data-a="${a}">${a}</span>`).join('');
   masps.querySelectorAll('.asp').forEach(el=>el.addEventListener('click',()=>{
     masps.querySelectorAll('.asp').forEach(x=>x.classList.remove('active')); el.classList.add('active');
-    maspect=el.dataset.a; mredraw(); }));
-  const mvid=document.getElementById('mvid');
-  mvid.src=DATA.source_url; mvid.currentTime=Math.max(0,(c.start||0)+0.1);
-  document.getElementById('moff').value=0;
-  document.getElementById('mlead').textContent=`Clip ${idx}: "${c.title||''}" — move the crop window, then re-render.`;
-  mvid.addEventListener('loadedmetadata',()=>{ try{mvid.currentTime=Math.max(0,(c.start||0)+0.1)}catch(e){}; mredraw(); },{once:true});
-  document.getElementById('modal').classList.add('open'); mredraw();
+    maspect=el.dataset.a; msync(); mredraw(); }));
+  const mvid=$('mvid'); mvid.src=DATA.source_url;
+  mvid.addEventListener('loadedmetadata',()=>{ try{ mvid.currentTime=Math.max(0,(c.start||0)+0.1); }catch(e){} mredraw(); },{once:true});
+  $('mlead').textContent=`Clip ${idx}: "${c.title||''}" — set zoom & position per ratio, then re-render.`;
+  $('mprog').style.display='none'; stopMPolls(); resetMProg();
+  $('mgo').disabled=false; $('mgo').textContent='Re-render clip';
+  $('modal').classList.add('open'); msync(); mredraw();
 }
-function mredraw(){
-  const [sw,sh]=DATA.source_dims||[0,0];
-  drawBox(document.getElementById('mbox'),document.getElementById('mtag'),sw,sh,maspect,parseFloat(document.getElementById('moff').value));
-  document.getElementById('mval').textContent=offLabel(document.getElementById('moff').value);
-  const wl=widthLimited(sw,sh,maspect); const off=document.getElementById('moff'); off.disabled=!wl;
-  document.getElementById('mhint').textContent = wl?'':`${maspect} uses the full width — no horizontal crop here.`;
+function closeModal(){ $('modal').classList.remove('open'); if(mLogTimer){clearInterval(mLogTimer);mLogTimer=null;}
+  const v=$('mvid'); v.pause(); v.removeAttribute('src'); v.load(); }   // render poll keeps running so the card refreshes
+
+function resetMProg(){ $('mprogfill').style.width='0%'; $('mprogpct').textContent='0%';
+  $('mproglbl').textContent='Rendering…'; $('mrasps').innerHTML=''; $('mlog').textContent='waiting for render output…'; }
+function stopMPolls(){ if(mRTimer){clearInterval(mRTimer);mRTimer=null;} if(mLogTimer){clearInterval(mLogTimer);mLogTimer=null;} }
+function mRenderStat(s){
+  const aspMap=s.aspects||{}; let list=ASPECTS.filter(a=>a in aspMap); if(!list.length) list=Object.keys(aspMap);
+  const wrap=$('mrasps'), key=list.join(',');
+  if(key!==mRKey){ mRKey=key; wrap.innerHTML=list.map(a=>
+    `<div class="rasp" data-a="${a}"><span class="lab"><span class="dot"></span>${a}</span><span class="st"></span></div>`).join(''); }
+  const total=list.length||1; let done=0;
+  list.forEach(a=>{ const st=aspMap[a]; if(st==='done')done++; const row=wrap.querySelector(`.rasp[data-a="${a}"]`); if(!row)return;
+    row.className='rasp '+(st||'');
+    row.querySelector('.st').textContent={queued:'queued',rendering:'rendering…',done:'done ✓',error:'failed'}[st]||st||''; });
+  const pct=Math.round(done/total*100); $('mprogfill').style.width=pct+'%'; $('mprogpct').textContent=pct+'%';
+  $('mmaster').classList.toggle('complete', done>=total && total>0 && !(s.active||s.queued));
+  if(s.status==='error') $('mproglbl').textContent='⚠ '+(s.error||'render failed');
+  else if(s.active||s.queued) $('mproglbl').textContent=`Rendering ${done}/${total}${s.queued?' · +1 queued':''}…`;
+  else if(done>=total&&total) $('mproglbl').textContent=`✓ Done — ${total} ${total>1?'ratios':'ratio'} rendered`;
 }
-document.getElementById('moff').addEventListener('input',mredraw);
-function closeModal(){ document.getElementById('modal').classList.remove('open'); const v=document.getElementById('mvid'); v.pause(); v.removeAttribute('src'); v.load(); }
-document.getElementById('mgo').addEventListener('click',async ev=>{
-  if(!MCLIP) return; const btn=ev.target; btn.disabled=true; btn.textContent='Re-rendering…';
-  const fd=new FormData(); fd.append('x_offset',document.getElementById('moff').value); fd.append('captions','overlay');
-  const r=await fetch(`/api/job/${JOB}/clip/${MCLIP.index}/reframe`,{method:'POST',body:fd});
-  if(r.ok){ const d=await r.json(); const idx=MCLIP.index;
-    // update cached outputs + reload the visible video
-    const c=DATA.clips.find(c=>c.index===idx); if(c) c.outputs=d.outputs;
-    const activeTab=document.querySelector(`#clip${idx} .tab.active`); const a=activeTab?activeTab.dataset.a:"9:16";
-    document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{ if(d.outputs[t.dataset.a]) t.dataset.src=d.outputs[t.dataset.a]; });
-    const v=document.getElementById('vid'+idx); v.src=(d.outputs[a]||Object.values(d.outputs)[0])+'?t='+Date.now(); v.load();
-    closeModal();
-  } else { alert('Re-render failed: '+(await r.text())); }
-  btn.disabled=false; btn.textContent='Re-render clip';
-});
+function refreshClipCard(idx,out){
+  const c=DATA.clips.find(c=>c.index===idx); if(!c) return;
+  // Output PATHS are stable (9x16.mp4 …) — only the file content changed, so a
+  // cache-bust reload is always needed even when the status payload's outputs
+  // map lags a tick behind the aspects flipping to done.
+  if(out&&Object.keys(out).length) c.outputs=Object.assign({},c.outputs,out);
+  const outs=c.outputs||{}; if(!Object.keys(outs).length) return;
+  const activeTab=document.querySelector(`#clip${idx} .tab.active`); const a=activeTab?activeTab.dataset.a:"9:16";
+  const ts=Date.now();   // shared cache-bust token: every ratio's content changed at the same paths
+  document.querySelectorAll(`#clip${idx} .tab`).forEach(t=>{ if(outs[t.dataset.a]) t.dataset.src=outs[t.dataset.a].split('?')[0]+'?t='+ts; });
+  const v=$('vid'+idx); const src=outs[a]||Object.values(outs)[0];
+  if(v&&src){ v.src=src.split('?')[0]+'?t='+ts; v.load(); }   // bust browser cache → show new render
+  // NB: do NOT clear the card's dataset.sig — output paths are unchanged, so the
+  // 2.5s reconcile poll already leaves this card alone; clearing sig would make
+  // it rebuild a fresh <video> with no cache-bust and undo the reload above.
+}
+function mPollRender(){
+  if(!MCLIP) return;
+  fetch(`/api/job/${JOB}/clip/${MCLIP.index}/rerender-status`).then(r=>r.json()).then(s=>{
+    mRenderStat(s);
+    const busy=s.active||s.queued||s.status==='rendering'||s.status==='queued';
+    if(!busy){
+      if(mRTimer){clearInterval(mRTimer);mRTimer=null;} if(mLogTimer){clearInterval(mLogTimer);mLogTimer=null;}
+      $('mgo').disabled=false; $('mgo').textContent='Re-render again';
+      if(s.status!=='error') refreshClipCard(MCLIP.index, s.outputs||{});
+      mPollLog();   // one final tail
+    }
+  }).catch(()=>{});
+}
+function mPollLog(){
+  fetch(`/api/job/${JOB}/log`).then(r=>r.ok?r.json():null).then(d=>{ if(!d||!d.log)return;
+    const el=$('mlog'); const atB=el.scrollTop+el.clientHeight>=el.scrollHeight-24;
+    el.textContent=d.log; if(atB) el.scrollTop=el.scrollHeight; }).catch(()=>{});
+}
+function mGo(){
+  if(!MCLIP) return;
+  $('mgo').disabled=true; $('mgo').textContent='Queued…';
+  $('mprog').style.display='block'; resetMProg(); mRKey='';
+  fetch(`/api/job/${JOB}/clip/${MCLIP.index}/edit`,{method:'POST',
+        headers:{'Content-Type':'application/json'}, body:JSON.stringify({transforms:MTF})})
+    .then(r=>{ if(!r.ok) return r.text().then(t=>{throw new Error(t);});
+      $('mgo').textContent='Rendering…'; stopMPolls();
+      mPollRender(); mRTimer=setInterval(mPollRender,600);
+      mPollLog();    mLogTimer=setInterval(mPollLog,1000); })
+    .catch(e=>{ $('mproglbl').textContent='⚠ Could not start: '+(e.message||e); $('mgo').disabled=false; $('mgo').textContent='Re-render clip'; });
+}
+/* wire the static modal controls once + drive the live output preview */
+['mzoom','moff','moffy'].forEach(id=>$(id).addEventListener('input',mredraw));
+$('mcopy').addEventListener('click',()=>{ const t=MTF[maspect]; ASPECTS.forEach(a=>{MTF[a]={zoom:t.zoom,x:t.x,y:t.y};}); mredraw(); });
+$('mgo').addEventListener('click',mGo);
+startOutLoop($('moutframe'),$('moutcv'),$('mvid'),()=>maspect,()=>MTF[maspect],360);
 
 /* ---------- polling ---------- */
 async function pollLog(){
